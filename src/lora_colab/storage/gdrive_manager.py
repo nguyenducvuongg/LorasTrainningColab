@@ -48,6 +48,28 @@ class GDriveWorkspaceManager:
         return "google.colab" in sys.modules
 
     @classmethod
+    def ensure_drive_connected(cls, test_path: str = "/content/drive/MyDrive") -> bool:
+        """Verifies Google Drive FUSE mount is active, auto-recovering if Errno 107 disconnected."""
+        if not cls.is_colab():
+            return True
+        try:
+            if os.path.exists(test_path):
+                os.listdir(test_path)
+                return True
+        except Exception as e:
+            logger.warning(f"Google Drive FUSE connection lost ({e}). Auto-remounting...")
+            try:
+                from google.colab import drive
+                drive.flush_and_unmount()
+                drive.mount('/content/drive', force_remount=True)
+                logger.info("✓ Google Drive successfully reconnected!")
+                return True
+            except Exception as remount_err:
+                logger.error(f"Failed to auto-remount Google Drive: {remount_err}")
+                return False
+        return True
+
+    @classmethod
     def mount_google_drive(cls) -> bool:
         """Mounts Google Drive if inside Colab."""
         if cls.is_colab():

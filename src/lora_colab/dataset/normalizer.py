@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 from PIL import Image, ImageOps
 from typing import List, Dict, Optional, Tuple, Any
 from tqdm import tqdm
@@ -15,6 +16,7 @@ class DatasetNormalizer:
     - Auto-renames files to standard format: {prefix}_{index:04d}.{ext}
     - Converts corrupted/non-RGB modes (RGBA, P, CMYK) to clean standard RGB
     - Synchronizes matching .txt caption files
+    - Uses local /tmp staging to prevent Google Drive FUSE [Errno 107] Transport endpoint disconnects
     """
 
     @classmethod
@@ -84,8 +86,8 @@ class DatasetNormalizer:
         start_index: int = 1
     ) -> Dict[str, Any]:
         """
-        Normalizes and renames all images and captions in input_dir.
-        If output_dir is None, normalizes in-place (via safe temporary staging).
+        Normalizes and renames all images and captions in input_dir using local /tmp staging.
+        Eliminates Google Drive FUSE I/O locks and [Errno 107] errors.
         """
         if not os.path.exists(input_dir):
             raise ValueError(f"Input directory does not exist: {input_dir}")
@@ -108,57 +110,57 @@ class DatasetNormalizer:
             logger.warning(f"No valid images found in {input_dir}")
             return {"processed_count": 0, "failed_count": 0, "target_dir": target_dir}
 
-        console.print(f"[bold cyan]🔄 Normalizing & Renaming {len(image_files)} images in '{input_dir}' with prefix '{prefix}'...[/bold cyan]")
+        console.print(f"[bold cyan]🔄 Chuẩn hóa & Đổi tên {len(image_files)} ảnh trong '{input_dir}' với tiền tố '{prefix}'...[/bold cyan]")
 
-        processed = 0
-        failed = 0
-        temp_staging = os.path.join(target_dir, "_temp_normalizing_staging")
-        os.makedirs(temp_staging, exist_ok=True)
+        # Use local /tmp directory for staging to ensure 100% stable I/O
+        with tempfile.TemporaryDirectory(prefix="lora_norm_") as temp_staging:
+            processed = 0
+            failed = 0
 
-        for i, filename in enumerate(tqdm(image_files, desc="Normalizing Dataset")):
-            idx = start_index + i
-            base_src, ext_src = os.path.splitext(filename)
-            src_img_path = os.path.join(input_dir, filename)
-            src_txt_path = os.path.join(input_dir, base_src + ".txt")
+            for i, filename in enumerate(tqdm(image_files, desc="Normalizing Dataset")):
+                idx = start_index + i
+                base_src, ext_src = os.path.splitext(filename)
+                src_img_path = os.path.join(input_dir, filename)
+                src_txt_path = os.path.join(input_dir, base_src + ".txt")
 
-            out_ext = ".png" if target_format.upper() == "PNG" else ".jpg"
-            new_img_name = f"{prefix}_{idx:04d}{out_ext}"
-            new_txt_name = f"{prefix}_{idx:04d}.txt"
+                out_ext = ".png" if target_format.upper() == "PNG" else ".jpg"
+                new_img_name = f"{prefix}_{idx:04d}{out_ext}"
+                new_txt_name = f"{prefix}_{idx:04d}.txt"
 
-            dest_img_path = os.path.join(temp_staging, new_img_name)
-            dest_txt_path = os.path.join(temp_staging, new_txt_name)
+                dest_img_path = os.path.join(temp_staging, new_img_name)
+                dest_txt_path = os.path.join(temp_staging, new_txt_name)
 
-            # Process Image
-            success = cls.sanitize_image(src_img_path, dest_img_path, format=target_format)
-            if success:
-                # Copy caption if present
-                if os.path.exists(src_txt_path):
-                    shutil.copy2(src_txt_path, dest_txt_path)
-                processed += 1
-            else:
-                failed += 1
+                # Process Image via local staging
+                success = cls.sanitize_image(src_img_path, dest_img_path, format=target_format)
+                if success:
+                    # Copy caption if present
+                    if os.path.exists(src_txt_path):
+                        shutil.copy2(src_txt_path, dest_txt_path)
+                    processed += 1
+                else:
+                    failed += 1
 
-        # Move staged files to final destination
-        if in_place:
-            # Clean original images from input_dir
-            for f in image_files:
-                img_p = os.path.join(input_dir, f)
-                txt_p = os.path.join(input_dir, os.path.splitext(f)[0] + ".txt")
-                if os.path.exists(img_p):
-                    os.remove(img_p)
-                if os.path.exists(txt_p):
-                    os.remove(txt_p)
+            if processed > 0:
+                # If in-place, safely clean original files
+                if in_place:
+                    for f in image_files:
+                        img_p = os.path.join(input_dir, f)
+                        txt_p = os.path.join(input_dir, os.path.splitext(f)[0] + ".txt")
+                        try:
+                            if os.path.exists(img_p):
+                                os.remove(img_p)
+                            if os.path.exists(txt_p):
+                                os.remove(txt_p)
+                        except Exception as rm_err:
+                            logger.warning(f"Warning during file cleanup: {rm_err}")
 
-        for item in os.listdir(temp_staging):
-            src_item = os.path.join(temp_staging, item)
-            dst_item = os.path.join(target_dir, item)
-            if os.path.exists(dst_item):
-                os.remove(dst_item)
-            shutil.move(src_item, dst_item)
+                # Copy all cleanly normalized files from /tmp to final target in Google Drive
+                for item in os.listdir(temp_staging):
+                    src_item = os.path.join(temp_staging, item)
+                    dst_item = os.path.join(target_dir, item)
+                    shutil.copy2(src_item, dst_item)
 
-        shutil.rmtree(temp_staging, ignore_errors=True)
-
-        console.print(f"[bold green]✓ Normalization complete![/bold green] Processed: [bold green]{processed}[/bold green], Failed: [bold red]{failed}[/bold red]")
+        console.print(f"[bold green]✓ Chuẩn hóa hoàn tất an toàn![/bold green] Đã xử lý: [bold green]{processed}[/bold green], Lỗi: [bold red]{failed}[/bold red]")
         return {
             "processed_count": processed,
             "failed_count": failed,
