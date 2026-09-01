@@ -43,6 +43,38 @@ class DatasetNormalizer:
             return False
 
     @classmethod
+    def resolve_dataset_dir(cls, base_dir: str) -> str:
+        """
+        If base_dir contains direct images, returns base_dir.
+        If base_dir has no direct images but contains subdirectories with images (e.g. 02_character/Mai_girl),
+        returns the subfolder containing the images.
+        """
+        if not os.path.exists(base_dir):
+            return base_dir
+            
+        direct_images = [
+            f for f in os.listdir(base_dir)
+            if os.path.isfile(os.path.join(base_dir, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+        ]
+        if direct_images:
+            return base_dir
+            
+        subdirs = [
+            os.path.join(base_dir, d) for d in sorted(os.listdir(base_dir))
+            if os.path.isdir(os.path.join(base_dir, d)) and not d.startswith((".", "_"))
+        ]
+        for sub in subdirs:
+            sub_images = [
+                f for f in os.listdir(sub)
+                if os.path.isfile(os.path.join(sub, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+            ]
+            if sub_images:
+                console.print(f"[cyan]📁 Tự động phát hiện ảnh trong thư mục con: [bold]{sub}[/bold] ({len(sub_images)} ảnh)[/cyan]")
+                return sub
+                
+        return base_dir
+
+    @classmethod
     def normalize_folder(
         cls,
         input_dir: str,
@@ -58,6 +90,9 @@ class DatasetNormalizer:
         if not os.path.exists(input_dir):
             raise ValueError(f"Input directory does not exist: {input_dir}")
 
+        # Auto-resolve subfolder if input_dir contains a subfolder with images
+        input_dir = cls.resolve_dataset_dir(input_dir)
+
         in_place = output_dir is None or os.path.abspath(input_dir) == os.path.abspath(output_dir)
         target_dir = input_dir if in_place else output_dir
         os.makedirs(target_dir, exist_ok=True)
@@ -66,12 +101,12 @@ class DatasetNormalizer:
         raw_files = sorted(os.listdir(input_dir))
         image_files = [
             f for f in raw_files 
-            if os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+            if os.path.isfile(os.path.join(input_dir, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
         ]
 
         if not image_files:
             logger.warning(f"No valid images found in {input_dir}")
-            return {"processed_count": 0, "failed_count": 0}
+            return {"processed_count": 0, "failed_count": 0, "target_dir": target_dir}
 
         console.print(f"[bold cyan]🔄 Normalizing & Renaming {len(image_files)} images in '{input_dir}' with prefix '{prefix}'...[/bold cyan]")
 

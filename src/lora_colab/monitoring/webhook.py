@@ -18,6 +18,10 @@ class NotificationManager:
         fields: Optional[Dict[str, str]] = None
     ) -> bool:
         """Sends a rich Discord embed with optional image attachment."""
+        if not webhook_url or not isinstance(webhook_url, str) or not webhook_url.strip().startswith(("http://", "https://")):
+            return False
+
+        webhook_url = webhook_url.strip()
         try:
             embed = {
                 "title": embed_title,
