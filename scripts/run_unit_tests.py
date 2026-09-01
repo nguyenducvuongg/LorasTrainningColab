@@ -73,5 +73,18 @@ class TestColabLoRAStudio(unittest.TestCase):
 
         self.assertIn("character", SYSTEM_PROMPTS)
 
+    def test_engine_factory(self):
+        from lora_colab.engines.factory import EngineFactory
+        from lora_colab.engines.aitoolkit_trainer import AIToolkitTrainer
+        from lora_colab.engines.kohya_trainer import KohyaTrainer
+        from lora_colab.engines.musubi_trainer import MusubiTrainer
+
+        self.assertEqual(EngineFactory.resolve_engine_type("flux-dev"), AIToolkitTrainer)
+        self.assertEqual(EngineFactory.resolve_engine_type("krea2-raw"), AIToolkitTrainer)
+        self.assertEqual(EngineFactory.resolve_engine_type("sdxl-base"), KohyaTrainer)
+        self.assertEqual(EngineFactory.resolve_engine_type("pony-v6"), KohyaTrainer)
+        self.assertEqual(EngineFactory.resolve_engine_type("wan2.1"), MusubiTrainer)
+        self.assertEqual(EngineFactory.resolve_engine_type("qwen-image"), MusubiTrainer)
+
 if __name__ == "__main__":
     unittest.main()

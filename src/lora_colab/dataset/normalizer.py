@@ -13,7 +13,7 @@ SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jfif",
 class DatasetNormalizer:
     """
     Normalizes dataset images and associated caption files:
-    - Auto-renames files to standard format: {prefix}_{index:04d}.{ext}
+    - Auto-renames files to standard format {prefix}_{index:04d}.{ext} (optional, default: True)
     - Converts corrupted/non-RGB modes (RGBA, P, CMYK) to clean standard RGB
     - Synchronizes matching .txt caption files
     - Uses local /tmp staging to prevent Google Drive FUSE [Errno 107] Transport endpoint disconnects
@@ -83,11 +83,12 @@ class DatasetNormalizer:
         output_dir: Optional[str] = None,
         prefix: str = "img",
         target_format: str = "PNG",
-        start_index: int = 1
+        start_index: int = 1,
+        enable_renaming: bool = True
     ) -> Dict[str, Any]:
         """
-        Normalizes and renames all images and captions in input_dir using local /tmp staging.
-        Eliminates Google Drive FUSE I/O locks and [Errno 107] errors.
+        Normalizes and sanitizes all images and captions in input_dir using local /tmp staging.
+        If enable_renaming=False, preserves original file names without renaming.
         """
         if not os.path.exists(input_dir):
             raise ValueError(f"Input directory does not exist: {input_dir}")
@@ -110,7 +111,8 @@ class DatasetNormalizer:
             logger.warning(f"No valid images found in {input_dir}")
             return {"processed_count": 0, "failed_count": 0, "target_dir": target_dir}
 
-        console.print(f"[bold cyan]🔄 Chuẩn hóa & Đổi tên {len(image_files)} ảnh trong '{input_dir}' với tiền tố '{prefix}'...[/bold cyan]")
+        mode_desc = f"với tiền tố '{prefix}'" if enable_renaming else "(Giữ nguyên tên file gốc)"
+        console.print(f"[bold cyan]🔄 Chuẩn hóa {len(image_files)} ảnh trong '{input_dir}' {mode_desc}...[/bold cyan]")
 
         # Use local /tmp directory for staging to ensure 100% stable I/O
         with tempfile.TemporaryDirectory(prefix="lora_norm_") as temp_staging:
@@ -123,9 +125,14 @@ class DatasetNormalizer:
                 src_img_path = os.path.join(input_dir, filename)
                 src_txt_path = os.path.join(input_dir, base_src + ".txt")
 
-                out_ext = ".png" if target_format.upper() == "PNG" else ".jpg"
-                new_img_name = f"{prefix}_{idx:04d}{out_ext}"
-                new_txt_name = f"{prefix}_{idx:04d}.txt"
+                out_ext = ".png" if target_format.upper() == "PNG" else ext_src.lower()
+                
+                if enable_renaming:
+                    new_img_name = f"{prefix}_{idx:04d}{out_ext}"
+                    new_txt_name = f"{prefix}_{idx:04d}.txt"
+                else:
+                    new_img_name = f"{base_src}{out_ext}"
+                    new_txt_name = f"{base_src}.txt"
 
                 dest_img_path = os.path.join(temp_staging, new_img_name)
                 dest_txt_path = os.path.join(temp_staging, new_txt_name)
@@ -149,7 +156,7 @@ class DatasetNormalizer:
                         try:
                             if os.path.exists(img_p):
                                 os.remove(img_p)
-                            if os.path.exists(txt_p):
+                            if os.path.exists(txt_p) and enable_renaming:
                                 os.remove(txt_p)
                         except Exception as rm_err:
                             logger.warning(f"Warning during file cleanup: {rm_err}")
