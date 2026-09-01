@@ -12,18 +12,19 @@ class KohyaTrainer(BaseTrainer):
     """
     Kohya_ss (sd-scripts) Trainer Engine.
     Industry standard for SDXL 1.0, Pony Diffusion V6, Illustrious-XL, SD 1.5, and SD 3.5.
-    """
-
-    def _determine_script_name(self) -> str:
-        fam = self.config.training.model_family.lower()
-        if any(k in fam for k in ["sdxl", "pony", "illustrious", "animagine"]):
-            return "sdxl_train_network.py"
-        elif "sd3" in fam:
-            return "sd3_train_network.py"
-        elif "flux" in fam:
-            return "flux_train_network.py"
-        else:
-            return "train_network.py"
+    def _resolve_script_path(self) -> str:
+        script_name = self._determine_script_name()
+        possible_paths = [
+            os.path.join("/content/backends/sd-scripts", script_name),
+            os.path.join("/content/sd-scripts", script_name),
+            os.path.join("sd-scripts", script_name),
+            os.path.join(os.getcwd(), "sd-scripts", script_name),
+            script_name
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                return p
+        return os.path.join("/content/backends/sd-scripts", script_name)
 
     def build_command_or_config(self, resume_from: Optional[str] = None) -> List[str]:
         cfg = self.config
@@ -31,12 +32,12 @@ class KohyaTrainer(BaseTrainer):
         d_cfg = cfg.dataset
         n_cfg = cfg.network
 
-        script_name = self._determine_script_name()
+        resolved_script = self._resolve_script_path()
         cmd = [
             "accelerate", "launch",
             "--num_cpu_threads_per_process=2",
             "--mixed_precision=" + ("bf16" if t_cfg.mixed_precision == "bf16" else "fp16"),
-            f"sd-scripts/{script_name}",
+            resolved_script,
             f"--pretrained_model_name_or_path={t_cfg.base_model_path}",
             f"--train_data_dir={d_cfg.dataset_dir}",
             f"--output_dir={t_cfg.checkpoint_dir}",

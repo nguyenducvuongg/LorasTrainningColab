@@ -9,10 +9,19 @@ safetensors>=0.4.2
 huggingface-hub>=0.23.0
 bitsandbytes>=0.43.0
 
+# Optimizers & Architectures
+prodigyopt>=1.0
+dadaptation>=3.1
+lycoris-lora>=2.2.0
+
+# Tokenizers & Attention
+sentencepiece>=0.2.0
+protobuf>=3.20.0
+einops>=0.7.0
+
 # Image & Data Processing
 pillow>=10.2.0
 opencv-python-headless>=4.9.0
-einops>=0.7.0
 numpy>=1.24.0
 
 # Configuration & Utilities

@@ -94,6 +94,18 @@ class AIToolkitTrainer(BaseTrainer):
 
         return ai_toolkit_yaml
 
+    def _resolve_run_cmd(self, config_path: str) -> List[str]:
+        possible_paths = [
+            "/content/backends/ai-toolkit/run.py",
+            "/content/ai-toolkit/run.py",
+            os.path.join(os.getcwd(), "ai-toolkit", "run.py"),
+            "ai-toolkit/run.py"
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                return [sys.executable, p, config_path]
+        return [sys.executable, "-m", "ai_toolkit.run", config_path]
+
     def train(self, resume_from: Optional[str] = None) -> bool:
         config_dict = self.build_command_or_config()
         temp_config_path = os.path.join(self.config.training.checkpoint_dir, "ai_toolkit_active_config.yaml")
@@ -106,8 +118,8 @@ class AIToolkitTrainer(BaseTrainer):
         console.print(f"  • Config: [cyan]{temp_config_path}[/cyan]")
         console.print(f"  • Output Checkpoints directly to: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
 
-        # Run AI-Toolkit process
-        cmd = ["python", "-m", "ai_toolkit.run", temp_config_path]
+        # Run AI-Toolkit process with auto-resolved runner
+        cmd = self._resolve_run_cmd(temp_config_path)
         try:
             process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in process.stdout:
