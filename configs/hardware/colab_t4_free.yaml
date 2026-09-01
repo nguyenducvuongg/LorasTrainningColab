@@ -1,0 +1,12 @@
+hardware:
+  tier: "T4"
+  vram_target: 15.0
+  precision: "fp8"
+  optimizer: "AdamW8bit"
+  batch_size: 1
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  cache_latents_to_disk: true
+  train_text_encoder: false
+  fused_backward_pass: true
+  attention: "sdpa"

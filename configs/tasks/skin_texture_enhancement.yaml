@@ -1,0 +1,11 @@
+task:
+  name: "Skin Texture & Detail Enhancement LoRA"
+  description: "Optimized for extreme photorealism, pores, skin textures, micro-details, and realistic lighting."
+  subfolders:
+    - path: "condition"
+      description: "Low/Medium resolution or raw input images"
+    - path: "target"
+      description: "Ultra-high resolution ground truth with sharp skin texture and lighting"
+  recommended_rank: 32
+  recommended_alpha: 16
+  recommended_captioner: "gemini"

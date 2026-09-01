@@ -1,0 +1,123 @@
+import os
+import sys
+from typing import Dict, List, Any
+from ..core.logger import setup_logger, console
+
+logger = setup_logger(__name__)
+
+class GDriveWorkspaceManager:
+    """
+    Manages Google Drive workspace initialization, scans existing directories,
+    prevents overwrites, and organizes models, datasets, and outputs safely.
+    """
+    
+    DEFAULT_DRIVE_ROOT = "/content/drive/MyDrive/Colab_LoRA_Studio"
+    LOCAL_FALLBACK_ROOT = os.path.expanduser("~/Colab_LoRA_Studio")
+
+    STANDARD_DIRECTORIES = [
+        # Models
+        "models/flux",
+        "models/flux_kontext",
+        "models/sdxl",
+        "models/krea",
+        "models/sd35",
+        "models/sd15",
+        "models/qwen",
+        "models/text_encoders",
+        "models/vae",
+        # Datasets
+        "datasets/01_character/10_face",
+        "datasets/01_character/08_half_body",
+        "datasets/01_character/05_full_body",
+        "datasets/01_character/03_variations",
+        "datasets/02_style/10_style_art",
+        "datasets/03_enhancement/condition",
+        "datasets/03_enhancement/target",
+        "datasets/04_control/conditioning_images",
+        "datasets/04_control/ground_truth_images",
+        "datasets/raw_uploads",
+        # Outputs
+        "outputs/checkpoints",
+        "outputs/samples",
+        "outputs/final_loras",
+        "outputs/logs",
+        # Configs
+        "configs"
+    ]
+
+    @classmethod
+    def is_colab(cls) -> bool:
+        """Check if executing inside Google Colab."""
+        return "google.colab" in sys.modules
+
+    @classmethod
+    def mount_google_drive(cls) -> bool:
+        """Mounts Google Drive if inside Colab."""
+        if cls.is_colab():
+            try:
+                from google.colab import drive
+                logger.info("[bold cyan]Mounting Google Drive...[/bold cyan]")
+                drive.mount('/content/drive', force_remount=False)
+                logger.info("[bold green]✓ Google Drive successfully mounted at /content/drive[/bold green]")
+                return True
+            except Exception as e:
+                logger.error(f"[bold red]Failed to mount Google Drive: {e}[/bold red]")
+                return False
+        else:
+            logger.info(f"Running outside Google Colab. Using local workspace: {cls.LOCAL_FALLBACK_ROOT}")
+            return True
+
+    @classmethod
+    def init_workspace(cls, custom_root: str = None) -> Dict[str, str]:
+        """
+        Initializes workspace directory structure without overwriting existing files.
+        Scans and returns the resolved paths.
+        """
+        root_dir = custom_root or (cls.DEFAULT_DRIVE_ROOT if cls.is_colab() else cls.LOCAL_FALLBACK_ROOT)
+        
+        created_count = 0
+        existing_count = 0
+        path_map: Dict[str, str] = {"root": root_dir}
+
+        for sub_dir in cls.STANDARD_DIRECTORIES:
+            full_path = os.path.join(root_dir, sub_dir)
+            path_map[sub_dir.replace("/", "_")] = full_path
+            
+            if os.path.exists(full_path):
+                existing_count += 1
+            else:
+                os.makedirs(full_path, exist_ok=True)
+                created_count += 1
+
+        console.rule("[bold cyan]Google Drive Workspace Status[/bold cyan]")
+        console.print(f"[bold green]Workspace Root:[/bold green] [yellow]{root_dir}[/yellow]")
+        console.print(f"  • Existing Folders (Preserved): [bold green]{existing_count}[/bold green]")
+        console.print(f"  • Newly Created Folders: [bold cyan]{created_count}[/bold cyan]")
+        console.print(f"[bold green]✓ All models, datasets & LoRA checkpoints will be saved 100% directly to Drive.[/bold green]")
+        console.rule()
+
+        return path_map
+
+    @classmethod
+    def scan_existing_models(cls, root_dir: str = None) -> List[Dict[str, Any]]:
+        """Scans and lists existing base model weights in Google Drive."""
+        root = root_dir or (cls.DEFAULT_DRIVE_ROOT if cls.is_colab() else cls.LOCAL_FALLBACK_ROOT)
+        models_dir = os.path.join(root, "models")
+        
+        found_models = []
+        if not os.path.exists(models_dir):
+            return found_models
+
+        for root_p, _, files in os.walk(models_dir):
+            for file in files:
+                if file.endswith((".safetensors", ".ckpt", ".pt", ".bin", ".gguf")):
+                    full_p = os.path.join(root_p, file)
+                    size_gb = round(os.path.getsize(full_p) / (1024 ** 3), 2)
+                    rel_cat = os.path.relpath(root_p, models_dir)
+                    found_models.append({
+                        "category": rel_cat,
+                        "filename": file,
+                        "size_gb": size_gb,
+                        "path": full_p
+                    })
+        return found_models

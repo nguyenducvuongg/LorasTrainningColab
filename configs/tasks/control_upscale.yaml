@@ -1,0 +1,10 @@
+task:
+  name: "Control & Upscale LoRA"
+  description: "Optimized for ControlNet conditioning, upscaling, restoration, or inpainting adapters."
+  subfolders:
+    - path: "conditioning_images"
+      description: "Canny / Depth / Lineart / Conditioning input images"
+    - path: "ground_truth_images"
+      description: "High quality full target images"
+  recommended_rank: 64
+  recommended_alpha: 32

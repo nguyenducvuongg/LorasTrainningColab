@@ -1,0 +1,33 @@
+# Core PyTorch & HuggingFace Ecosystem
+torch>=2.1.0
+torchvision>=0.16.0
+accelerate>=0.28.0
+transformers>=4.40.0
+diffusers>=0.28.0
+peft>=0.10.0
+safetensors>=0.4.2
+huggingface-hub>=0.23.0
+bitsandbytes>=0.43.0
+
+# Image & Data Processing
+pillow>=10.2.0
+opencv-python-headless>=4.9.0
+einops>=0.7.0
+numpy>=1.24.0
+
+# Configuration & Utilities
+pydantic>=2.6.0
+pyyaml>=6.0.1
+toml>=0.10.2
+tqdm>=4.66.0
+requests>=2.31.0
+rich>=13.7.0
+
+# Vision & Multimodal APIs for Captioning
+google-genai>=0.1.0
+openai>=1.20.0
+
+# Optional / Specialized
+onnxruntime-gpu>=1.17.0; sys_platform == 'linux'
+pytest>=8.0.0
+pytest-mock>=3.12.0

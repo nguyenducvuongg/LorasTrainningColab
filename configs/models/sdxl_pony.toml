@@ -1,0 +1,43 @@
+[dataset]
+dataset_dir = "/content/drive/MyDrive/Colab_LoRA_Studio/datasets/01_character"
+repeats = 10
+task_type = "character"
+resolution = 1024
+enable_bucketing = true
+min_bucket_res = 512
+max_bucket_res = 1536
+caption_extension = ".txt"
+shuffle_caption = true
+keep_tokens = 1
+
+[network]
+network_module = "networks.lora"
+network_dim = 32
+network_alpha = 16.0
+network_dropout = 0.0
+
+[training]
+base_model_path = "/content/drive/MyDrive/Colab_LoRA_Studio/models/sdxl/ponyDiffusionV6XL.safetensors"
+model_family = "pony"
+output_name = "pony_character_lora"
+output_dir = "/content/drive/MyDrive/Colab_LoRA_Studio/outputs/final_loras"
+checkpoint_dir = "/content/drive/MyDrive/Colab_LoRA_Studio/outputs/checkpoints"
+sample_dir = "/content/drive/MyDrive/Colab_LoRA_Studio/outputs/samples"
+logging_dir = "/content/drive/MyDrive/Colab_LoRA_Studio/outputs/logs"
+
+epochs = 10
+save_every_n_epochs = 1
+save_every_n_steps = 250
+save_state = true
+
+batch_size = 2
+gradient_accumulation_steps = 1
+learning_rate = 0.0001
+text_encoder_lr = 0.00005
+optimizer_type = "Prodigy"
+lr_scheduler = "cosine"
+lr_warmup_steps = 100
+mixed_precision = "bf16"
+gradient_checkpointing = true
+cache_latents = true
+cache_latents_to_disk = true

@@ -1,0 +1,10 @@
+task:
+  name: "Art Style & Aesthetic LoRA"
+  description: "Optimized for artistic styles, line art, color schemes, and rendering aesthetic."
+  subfolders:
+    - path: "10_style_art"
+      repeats: 10
+      description: "Diverse subjects (people, landscapes, objects) in consistent art style"
+  recommended_rank: 64
+  recommended_alpha: 32
+  recommended_captioner: "gemini"

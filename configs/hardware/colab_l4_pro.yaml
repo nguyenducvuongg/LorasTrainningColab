@@ -1,0 +1,12 @@
+hardware:
+  tier: "L4"
+  vram_target: 22.5
+  precision: "bf16"
+  optimizer: "Prodigy"
+  batch_size: 2
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: true
+  cache_latents_to_disk: true
+  train_text_encoder: false
+  fused_backward_pass: true
+  attention: "sdpa"

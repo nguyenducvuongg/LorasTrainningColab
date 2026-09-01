@@ -1,0 +1,19 @@
+task:
+  name: "Character Face & Body LoRA"
+  description: "Optimized for character identity, faces, expressions, and multi-angle body shots."
+  subfolders:
+    - path: "10_face"
+      repeats: 10
+      description: "Close-up face images with diverse expressions and lighting"
+    - path: "08_half_body"
+      repeats: 8
+      description: "Half body portraits with clothing details"
+    - path: "05_full_body"
+      repeats: 5
+      description: "Full body standing, sitting, dynamic poses"
+    - path: "03_variations"
+      repeats: 3
+      description: "Complex backgrounds, action shots"
+  recommended_rank: 32
+  recommended_alpha: 16
+  recommended_captioner: "gemini" # or wd14 for anime

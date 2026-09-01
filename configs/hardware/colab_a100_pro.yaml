@@ -1,0 +1,12 @@
+hardware:
+  tier: "A100"
+  vram_target: 40.0
+  precision: "bf16"
+  optimizer: "AdamW"
+  batch_size: 4
+  gradient_accumulation_steps: 1
+  gradient_checkpointing: false
+  cache_latents_to_disk: true
+  train_text_encoder: true
+  fused_backward_pass: true
+  attention: "flash_attention_2"
