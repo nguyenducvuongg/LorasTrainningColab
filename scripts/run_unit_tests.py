@@ -6,6 +6,7 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from lora_colab.core.hardware import HardwareProfiler, GPUProfile
+from lora_colab.core.environment import AutoEnvironmentManager
 from lora_colab.storage.gdrive_manager import GDriveWorkspaceManager
 from lora_colab.storage.model_downloader import MODEL_REGISTRY
 from lora_colab.storage.resume_manager import ResumeManager
@@ -16,6 +17,12 @@ import tempfile
 from PIL import Image
 
 class TestColabLoRAStudio(unittest.TestCase):
+
+    def test_environment_manager(self):
+        info = AutoEnvironmentManager.get_runtime_info()
+        self.assertIn("python_version", info)
+        self.assertIn("torch_version", info)
+        self.assertIn("cuda_version", info)
 
     def test_hardware_profiler(self):
         profile = HardwareProfiler.detect_and_profile("flux")
