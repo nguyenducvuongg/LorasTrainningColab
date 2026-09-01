@@ -1,7 +1,7 @@
 # 🎨 Colab LoRA Studio (All-in-One LoRA Training Suite)
 
 <p align="center">
-  <a href="https://colab.research.google.com/github/nguyenducvuongg/LorasTrainning/blob/main/Colab_LoRA_Studio.ipynb">
+  <a href="https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/main/Colab_LoRA_Studio.ipynb">
     <img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab" width="220">
   </a>
 </p>
@@ -37,9 +37,9 @@
 
 Nhấn vào huy hiệu dưới đây để mở trực tiếp Master Notebook trên Google Colab:
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainning/blob/main/Colab_LoRA_Studio.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/main/Colab_LoRA_Studio.ipynb)
 
-> **Link trực tiếp:** `https://colab.research.google.com/github/nguyenducvuongg/LorasTrainning/blob/main/Colab_LoRA_Studio.ipynb`
+> **Link trực tiếp:** `https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/main/Colab_LoRA_Studio.ipynb`
 
 ---
 
@@ -101,7 +101,7 @@ Google Drive: MyDrive/Colab_LoRA_Studio/datasets/
 
 ## 5. Hướng Dẫn 7 Bước Chạy 1-Click Trên Google Colab
 
-Mở file [`Colab_LoRA_Studio.ipynb`](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainning/blob/main/Colab_LoRA_Studio.ipynb) và chọn **Runtime -> Run all**:
+Mở file [`Colab_LoRA_Studio.ipynb`](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/main/Colab_LoRA_Studio.ipynb) và chọn **Runtime -> Run all**:
 
 ```
 [Cell 1: 🚀 Khởi tạo Môi trường & Mount Google Drive]
