@@ -14,7 +14,8 @@ def test_workspace_init_and_scan():
         # 1. First init (creates directories)
         paths = GDriveWorkspaceManager.init_workspace(tmp_root)
         assert os.path.exists(os.path.join(tmp_root, "models", "flux"))
-        assert os.path.exists(os.path.join(tmp_root, "datasets", "01_character"))
+        assert os.path.exists(os.path.join(tmp_root, "datasets", "01_face"))
+        assert os.path.exists(os.path.join(tmp_root, "datasets", "02_character"))
         assert os.path.exists(os.path.join(tmp_root, "outputs", "final_loras"))
 
         # Create dummy model file
