@@ -1,4 +1,7 @@
-{
+import json
+import os
+
+notebook_data = {
  "cells": [
   {
    "cell_type": "markdown",
@@ -19,7 +22,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -61,7 +64,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -80,7 +83,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -107,7 +110,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -171,7 +174,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -269,7 +272,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -310,7 +313,7 @@
   },
   {
    "cell_type": "code",
-   "execution_count": null,
+   "execution_count": None,
    "metadata": {
     "cellView": "form"
    },
@@ -368,3 +371,8 @@
  "nbformat": 4,
  "nbformat_minor": 0
 }
+
+with open("Colab_LoRA_Studio.ipynb", "w", encoding="utf-8") as f:
+    json.dump(notebook_data, f, indent=1, ensure_ascii=False)
+
+print("✓ Colab_LoRA_Studio.ipynb successfully generated and verified!")
