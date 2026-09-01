@@ -34,6 +34,8 @@ class TestColabLoRAStudio(unittest.TestCase):
         self.assertIn("flux-dev", MODEL_REGISTRY)
         self.assertIn("flux-kontext", MODEL_REGISTRY)
         self.assertIn("krea2-raw", MODEL_REGISTRY)
+        self.assertIn("z-image-kolors", MODEL_REGISTRY)
+        self.assertIn("qwen-image", MODEL_REGISTRY)
         self.assertIn("pony-v6", MODEL_REGISTRY)
         self.assertIn("sd15-base", MODEL_REGISTRY)
 

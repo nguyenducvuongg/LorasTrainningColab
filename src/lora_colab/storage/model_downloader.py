@@ -99,9 +99,31 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filename": "sd3.5_medium.safetensors",
         "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
         "hf_filename": "sd_xl_base_1.0.safetensors",
+        "direct_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
         "min_size_gb": 5.0,
         "is_gated": False,
         "auxiliary_files": ["clip-l", "clip-g", "t5xxl-fp8"]
+    },
+    "z-image-kolors": {
+        "name": "Z-Image / Kwai Kolors Diffusion (Public)",
+        "category": "models/kolors",
+        "filename": "kolors_unet.safetensors",
+        "repo_id": "Kwai-Kolors/Kolors-diffusers",
+        "hf_filename": "unet/diffusion_pytorch_model.fp16.safetensors",
+        "direct_url": "https://huggingface.co/Kwai-Kolors/Kolors-diffusers/resolve/main/unet/diffusion_pytorch_model.fp16.safetensors",
+        "min_size_gb": 4.5,
+        "is_gated": False,
+        "auxiliary_files": ["sdxl-vae"]
+    },
+    "qwen-image": {
+        "name": "Qwen2-VL Multimodal Diffusion (Public)",
+        "category": "models/qwen",
+        "filename": "qwen2_vl_model.safetensors",
+        "repo_id": "Qwen/Qwen2-VL-2B-Instruct",
+        "hf_filename": "model-00001-of-00002.safetensors",
+        "direct_url": "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct/resolve/main/model-00001-of-00002.safetensors",
+        "min_size_gb": 3.5,
+        "is_gated": False,
     },
     "sd15-base": {
         "name": "Stable Diffusion 1.5",
