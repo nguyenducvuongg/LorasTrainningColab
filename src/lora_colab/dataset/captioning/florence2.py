@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 from typing import Optional, Dict, Any, List
 from PIL import Image
@@ -14,11 +15,58 @@ except ImportError:
 
 logger = setup_logger(__name__)
 
+def _apply_global_transformers_patch():
+    """
+    Vá lỗi tương thích toàn cầu cho PretrainedConfig & HeterogeneousPretrainedConfig
+    trước khi nạp mã nguồn từ xa của Florence-2.
+    Loại bỏ triệt để 'AttributeError: Florence2LanguageConfig object has no attribute forced_bos_token_id'.
+    """
+    try:
+        import transformers.configuration_utils as cfg_utils
+        from transformers.configuration_utils import PretrainedConfig
+
+        orig_getattr = getattr(PretrainedConfig, "__getattr__", None)
+        def patched_getattr(self, key):
+            if key in ("forced_bos_token_id", "forced_eos_token_id", "_attn_implementation", "force_bos_token_to_be_generated"):
+                return None
+            if orig_getattr is not None:
+                return orig_getattr(self, key)
+            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+
+        PretrainedConfig.__getattr__ = patched_getattr
+
+        # Patch HeterogeneousPretrainedConfig trong transformers mới (>= 4.45)
+        try:
+            import transformers.integrations.heterogeneity.configuration_utils as hetero_mod
+            if hasattr(hetero_mod, "HeterogeneousPretrainedConfig"):
+                orig_hetero = getattr(hetero_mod.HeterogeneousPretrainedConfig, "__getattr__", None)
+                def patched_hetero(self, key):
+                    if key in ("forced_bos_token_id", "forced_eos_token_id", "_attn_implementation", "force_bos_token_to_be_generated"):
+                        return None
+                    if orig_hetero is not None:
+                        return orig_hetero(self, key)
+                    raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+                hetero_mod.HeterogeneousPretrainedConfig.__getattr__ = patched_hetero
+        except Exception:
+            pass
+
+        # Quét và vá trực tiếp các class Florence2LanguageConfig đã nạp trong sys.modules
+        for mod_name, mod in list(sys.modules.items()):
+            if "florence2" in mod_name.lower() or "configuration_florence" in mod_name.lower():
+                if hasattr(mod, "Florence2LanguageConfig"):
+                    setattr(mod.Florence2LanguageConfig, "forced_bos_token_id", None)
+                    setattr(mod.Florence2LanguageConfig, "forced_eos_token_id", None)
+                    setattr(mod.Florence2LanguageConfig, "_attn_implementation", None)
+    except Exception as e:
+        logger.debug(f"Transformers patch info: {e}")
+
+# Áp dụng patch ngay khi module được import
+_apply_global_transformers_patch()
+
 class Florence2Captioner(BaseCaptioner):
     """
-    Microsoft Florence-2 Vision-Language Captioning Engine:
-    - Hỗ trợ Florence-2-base, Florence-2-large, và MiaoshouAI PromptGen v2.0.
-    - Vá triệt để lỗi 'Florence2LanguageConfig has no attribute forced_bos_token_id' trên transformers mới.
+    Microsoft Florence-2 & JoyCaption Vision-Language Captioning Engine:
+    - Tự động vá lỗi tương thích với mọi phiên bản transformers mới nhất (>= 4.45+).
     - Hỗ trợ lưu cache model trực tiếp vào Google Drive để tái sử dụng mãi mãi.
     - Đa dạng chế độ: <MORE_DETAILED_CAPTION>, <DETAILED_CAPTION>, <GENERATE_TAGS>, <CAPTION>.
     """
@@ -65,56 +113,34 @@ class Florence2Captioner(BaseCaptioner):
         self.processor = None
         self._loaded = False
 
-    @staticmethod
-    def _apply_transformers_compatibility_patch(config: Any):
-        """
-        Vá lỗi tương thích giữa Florence-2 và các phiên bản transformers mới (>= 4.45):
-        Khắc phục triệt để 'AttributeError: Florence2LanguageConfig object has no attribute forced_bos_token_id'.
-        """
-        configs_to_patch = [config]
-        for attr in ["text_config", "language_config", "vision_config"]:
-            if hasattr(config, attr):
-                sub = getattr(config, attr)
-                if sub is not None:
-                    configs_to_patch.append(sub)
-
-        for cfg in configs_to_patch:
-            cls = cfg.__class__
-            # Đảm bảo các thuộc tính token_id luôn tồn tại trên class và instance
-            for token_attr in ["forced_bos_token_id", "forced_eos_token_id", "_attn_implementation"]:
-                if not hasattr(cls, token_attr):
-                    setattr(cls, token_attr, None)
-                if not hasattr(cfg, token_attr):
-                    setattr(cfg, token_attr, None)
-
-            # Bổ sung __getattr__ an toàn nếu chưa có
-            orig_getattr = getattr(cls, "__getattr__", None)
-            def safe_getattr(self, name):
-                if name in ("forced_bos_token_id", "forced_eos_token_id", "_attn_implementation"):
-                    return None
-                if orig_getattr:
-                    return orig_getattr(self, name)
-                raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
-            
-            cls.__getattr__ = safe_getattr
-
     def _lazy_load_model(self):
         if self._loaded:
             return
 
         try:
+            # 1. Kích hoạt lại global patch trước khi gọi AutoConfig
+            _apply_global_transformers_patch()
+
             from transformers import AutoProcessor, AutoModelForCausalLM, AutoConfig
             console.print(f"[bold cyan]📥 Tải và nạp local caption model ({self.model_id})...[/bold cyan]")
 
-            # 1. Nạp và vá Config trước khi khởi tạo Model
+            # 2. Nạp Config
             config = AutoConfig.from_pretrained(
                 self.model_id,
                 trust_remote_code=True,
                 cache_dir=self.cache_dir
             )
-            self._apply_transformers_compatibility_patch(config)
 
-            # 2. Nạp Model với Config đã được vá hoàn chỉnh
+            # Đảm bảo các sub-config cũng được vá
+            for attr in ["text_config", "language_config", "vision_config"]:
+                if hasattr(config, attr):
+                    sub = getattr(config, attr)
+                    if sub is not None:
+                        setattr(sub.__class__, "forced_bos_token_id", None)
+                        setattr(sub.__class__, "forced_eos_token_id", None)
+                        setattr(sub.__class__, "_attn_implementation", None)
+
+            # 3. Nạp Model
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_id,
                 config=config,
@@ -123,7 +149,7 @@ class Florence2Captioner(BaseCaptioner):
                 cache_dir=self.cache_dir
             ).to(self.device)
 
-            # 3. Nạp Processor
+            # 4. Nạp Processor
             self.processor = AutoProcessor.from_pretrained(
                 self.model_id,
                 trust_remote_code=True,
