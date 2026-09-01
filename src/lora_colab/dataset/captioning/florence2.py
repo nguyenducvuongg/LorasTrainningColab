@@ -1,10 +1,16 @@
+"""
+Florence-2 Vision Captioning Engine
+Gán nhãn tự động chuẩn hóa sử dụng mô hình Microsoft Florence-2 chạy cục bộ.
+Khắc phục triệt để lỗi 'Florence2LanguageConfig' object has no attribute 'forced_bos_token_id'
+trên các phiên bản mới của thư viện transformers.
+"""
+
 import os
 import sys
-import shutil
 from typing import Optional, Dict, Any, List
 from PIL import Image
 from tqdm import tqdm
-from .base import BaseCaptioner
+from .base import BaseCaptioner, build_task_prompt
 from ..cleaner import CaptionCleaner
 from ...core.logger import setup_logger, console
 
@@ -15,99 +21,55 @@ except ImportError:
 
 logger = setup_logger(__name__)
 
-def _apply_global_transformers_patch():
-    """
-    Vá lỗi tương thích toàn cầu cho PretrainedConfig & HeterogeneousPretrainedConfig
-    trước khi nạp mã nguồn từ xa của Florence-2.
-    Loại bỏ triệt để 'AttributeError: Florence2LanguageConfig object has no attribute forced_bos_token_id'.
-    """
-    try:
-        import transformers.configuration_utils as cfg_utils
-        from transformers.configuration_utils import PretrainedConfig
+SUPPORTED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jfif"}
 
+def _patch_florence_config():
+    """Globally patches PretrainedConfig to return None for missing forced_bos_token_id."""
+    try:
+        from transformers.configuration_utils import PretrainedConfig
         orig_getattr = getattr(PretrainedConfig, "__getattr__", None)
-        def patched_getattr(self, key):
+        def safe_getattr(self, key):
             if key in ("forced_bos_token_id", "forced_eos_token_id", "_attn_implementation", "force_bos_token_to_be_generated"):
                 return None
-            if orig_getattr is not None:
+            if orig_getattr:
                 return orig_getattr(self, key)
             raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
+        PretrainedConfig.__getattr__ = safe_getattr
 
-        PretrainedConfig.__getattr__ = patched_getattr
-
-        # Patch HeterogeneousPretrainedConfig trong transformers mới (>= 4.45)
+        # Patch HeterogeneousPretrainedConfig in transformers >= 4.45
         try:
-            import transformers.integrations.heterogeneity.configuration_utils as hetero_mod
-            if hasattr(hetero_mod, "HeterogeneousPretrainedConfig"):
-                orig_hetero = getattr(hetero_mod.HeterogeneousPretrainedConfig, "__getattr__", None)
-                def patched_hetero(self, key):
+            import transformers.integrations.heterogeneity.configuration_utils as hetero
+            if hasattr(hetero, "HeterogeneousPretrainedConfig"):
+                orig_hetero = getattr(hetero.HeterogeneousPretrainedConfig, "__getattr__", None)
+                def safe_hetero_getattr(self, key):
                     if key in ("forced_bos_token_id", "forced_eos_token_id", "_attn_implementation", "force_bos_token_to_be_generated"):
                         return None
-                    if orig_hetero is not None:
+                    if orig_hetero:
                         return orig_hetero(self, key)
-                    raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
-                hetero_mod.HeterogeneousPretrainedConfig.__getattr__ = patched_hetero
+                    return super(hetero.HeterogeneousPretrainedConfig, self).__getattr__(key)
+                hetero.HeterogeneousPretrainedConfig.__getattr__ = safe_hetero_getattr
         except Exception:
             pass
-
-        # Quét và vá trực tiếp các class Florence2LanguageConfig đã nạp trong sys.modules
-        for mod_name, mod in list(sys.modules.items()):
-            if "florence2" in mod_name.lower() or "configuration_florence" in mod_name.lower():
-                if hasattr(mod, "Florence2LanguageConfig"):
-                    setattr(mod.Florence2LanguageConfig, "forced_bos_token_id", None)
-                    setattr(mod.Florence2LanguageConfig, "forced_eos_token_id", None)
-                    setattr(mod.Florence2LanguageConfig, "_attn_implementation", None)
     except Exception as e:
-        logger.debug(f"Transformers patch info: {e}")
+        logger.debug(f"Patch info: {e}")
 
-# Áp dụng patch ngay khi module được import
-_apply_global_transformers_patch()
+_patch_florence_config()
 
 class Florence2Captioner(BaseCaptioner):
-    """
-    Microsoft Florence-2 & JoyCaption Vision-Language Captioning Engine:
-    - Tự động vá lỗi tương thích với mọi phiên bản transformers mới nhất (>= 4.45+).
-    - Hỗ trợ lưu cache model trực tiếp vào Google Drive để tái sử dụng mãi mãi.
-    - Đa dạng chế độ: <MORE_DETAILED_CAPTION>, <DETAILED_CAPTION>, <GENERATE_TAGS>, <CAPTION>.
-    """
-
-    MODEL_MIRRORS = {
-        "florence-2-base": "microsoft/Florence-2-base",
-        "florence-2-large": "microsoft/Florence-2-large",
-        "florence-2-promptgen": "MiaoshouAI/Florence-2-base-PromptGen-v2.0",
-        "florence-2-promptgen-large": "MiaoshouAI/Florence-2-large-PromptGen-v2.0",
-    }
-
-    TASK_PROMPTS = {
-        "more_detailed": "<MORE_DETAILED_CAPTION>",
-        "detailed": "<DETAILED_CAPTION>",
-        "tags": "<GENERATE_TAGS>",
-        "caption": "<CAPTION>",
-        "promptgen": "<GENERATE_TAGS>",
-    }
+    """Gán nhãn tự động với mô hình Microsoft Florence-2 chạy cục bộ."""
 
     def __init__(
         self,
-        model_name: str = "florence-2-base",
-        task: str = "more_detailed",
+        model_id: str = "microsoft/Florence-2-large",
+        task_mode: str = "General",
         cache_dir: Optional[str] = None,
-        device: Optional[str] = None,
-        torch_dtype: Any = None
+        device: Optional[str] = None
     ):
-        self.model_id = self.MODEL_MIRRORS.get(model_name.lower(), model_name)
-        self.task_key = task.lower()
-        self.task_prompt = self.TASK_PROMPTS.get(self.task_key, "<MORE_DETAILED_CAPTION>")
+        self.model_id = model_id
+        self.task_mode = task_mode
         self.cache_dir = cache_dir
-
-        if device is None:
-            self.device = "cuda" if (torch and torch.cuda.is_available()) else "cpu"
-        else:
-            self.device = device
-
-        if torch_dtype is None:
-            self.torch_dtype = torch.float16 if (torch and torch.cuda.is_available()) else (torch.float32 if torch else None)
-        else:
-            self.torch_dtype = torch_dtype
+        self.device = device or ("cuda" if (torch and torch.cuda.is_available()) else "cpu")
+        self.dtype = torch.float16 if (torch and torch.cuda.is_available()) else torch.float32
 
         self.model = None
         self.processor = None
@@ -118,38 +80,30 @@ class Florence2Captioner(BaseCaptioner):
             return
 
         try:
-            # 1. Kích hoạt lại global patch trước khi gọi AutoConfig
-            _apply_global_transformers_patch()
+            _patch_florence_config()
+            from transformers import AutoConfig, AutoProcessor, AutoModelForCausalLM
 
-            from transformers import AutoProcessor, AutoModelForCausalLM, AutoConfig
-            console.print(f"[bold cyan]📥 Tải và nạp local caption model ({self.model_id})...[/bold cyan]")
+            console.print(f"[bold cyan]📥 Tải và nạp mô hình Florence-2 ({self.model_id})...[/bold cyan]")
 
-            # 2. Nạp Config
+            # Nạp và patch config
             config = AutoConfig.from_pretrained(
                 self.model_id,
                 trust_remote_code=True,
                 cache_dir=self.cache_dir
             )
+            if hasattr(config, "text_config") and not hasattr(config.text_config, "forced_bos_token_id"):
+                config.text_config.forced_bos_token_id = getattr(config.text_config, "bos_token_id", None)
+            if not hasattr(config, "forced_bos_token_id"):
+                config.forced_bos_token_id = getattr(config, "bos_token_id", None)
 
-            # Đảm bảo các sub-config cũng được vá
-            for attr in ["text_config", "language_config", "vision_config"]:
-                if hasattr(config, attr):
-                    sub = getattr(config, attr)
-                    if sub is not None:
-                        setattr(sub.__class__, "forced_bos_token_id", None)
-                        setattr(sub.__class__, "forced_eos_token_id", None)
-                        setattr(sub.__class__, "_attn_implementation", None)
-
-            # 3. Nạp Model
             self.model = AutoModelForCausalLM.from_pretrained(
                 self.model_id,
                 config=config,
-                torch_dtype=self.torch_dtype,
+                torch_dtype=self.dtype,
                 trust_remote_code=True,
                 cache_dir=self.cache_dir
             ).to(self.device)
 
-            # 4. Nạp Processor
             self.processor = AutoProcessor.from_pretrained(
                 self.model_id,
                 trust_remote_code=True,
@@ -157,41 +111,53 @@ class Florence2Captioner(BaseCaptioner):
             )
 
             self._loaded = True
-            console.print(f"[bold green]✓ Florence-2 model ({self.model_id}) đã nạp thành công vào {self.device.upper()}![/bold green]")
+            console.print(f"[bold green]✓ Florence-2 đã sẵn sàng trên {self.device.upper()}![/bold green]")
         except Exception as e:
-            logger.error(f"Failed to load Florence-2 model: {e}")
+            logger.error(f"Không thể nạp Florence-2: {e}")
             raise e
 
     def caption_image(self, image_path: str, trigger_word: Optional[str] = None) -> str:
         self._lazy_load_model()
+        task_prompt = "<MORE_DETAILED_CAPTION>" if self.task_mode != "Short" else "<CAPTION>"
+
         try:
             image = Image.open(image_path).convert("RGB")
-            inputs = self.processor(text=self.task_prompt, images=image, return_tensors="pt").to(self.device, self.torch_dtype)
+            inputs = self.processor(text=task_prompt, images=image, return_tensors="pt")
+
+            processed_inputs = {}
+            for k, v in inputs.items():
+                if isinstance(v, torch.Tensor):
+                    if v.dtype == torch.float32 and torch.cuda.is_available():
+                        processed_inputs[k] = v.to(self.device, dtype=torch.float16)
+                    else:
+                        processed_inputs[k] = v.to(self.device)
+                else:
+                    processed_inputs[k] = v
 
             with torch.no_grad():
                 generated_ids = self.model.generate(
-                    input_ids=inputs["input_ids"],
-                    pixel_values=inputs["pixel_values"],
-                    max_new_tokens=384,
-                    do_sample=False,
-                    num_beams=3
+                    input_ids=processed_inputs["input_ids"],
+                    pixel_values=processed_inputs["pixel_values"],
+                    max_new_tokens=256,
+                    num_beams=3,
                 )
 
             generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
             parsed_answer = self.processor.post_process_generation(
                 generated_text,
-                task=self.task_prompt,
-                image_size=(image.width, image.height)
+                task=task_prompt,
+                image_size=(image.width, image.height),
             )
 
-            raw_caption = parsed_answer.get(self.task_prompt, "")
+            raw_caption = parsed_answer.get(task_prompt, "").strip()
             if isinstance(raw_caption, dict):
                 raw_caption = raw_caption.get("caption", str(raw_caption))
 
-            return CaptionCleaner.clean_text(str(raw_caption), trigger_word=trigger_word, is_danbooru_tags=False)
+            caption = CaptionCleaner.clean_text(str(raw_caption), trigger_word=trigger_word, is_danbooru_tags=False)
+            return caption
         except Exception as e:
-            logger.error(f"Florence-2 caption error for {image_path}: {e}")
-            return f"{trigger_word or ''}, high quality portrait photo"
+            logger.error(f"Lỗi Florence-2 tại {image_path}: {e}")
+            return f"{trigger_word or ''}, high quality portrait photograph"
 
     def caption_directory(
         self,
@@ -200,26 +166,31 @@ class Florence2Captioner(BaseCaptioner):
         overwrite: bool = False
     ) -> Dict[str, int]:
         self._lazy_load_model()
-        valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jfif"}
         images = [
             os.path.join(directory, f) for f in os.listdir(directory)
-            if os.path.isfile(os.path.join(directory, f)) and os.path.splitext(f)[-1].lower() in valid_exts
+            if os.path.isfile(os.path.join(directory, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTS
         ]
 
-        console.print(f"[bold cyan]✨ Tiến hành gán nhãn {len(images)} ảnh bằng Florence-2 ({self.task_prompt})...[/bold cyan]")
+        console.print(f"\n[bold cyan]🏷️ Florence-2: Gán nhãn {len(images)} ảnh...[/bold cyan]")
         success = 0
         skipped = 0
 
-        for img_p in tqdm(images, desc="Florence-2 Captioning"):
+        for img_p in tqdm(images, desc="🏷️ Florence-2"):
             txt_p = os.path.splitext(img_p)[0] + ".txt"
             if os.path.exists(txt_p) and not overwrite:
-                skipped += 1
-                continue
+                try:
+                    with open(txt_p, "r", encoding="utf-8") as f:
+                        if f.read().strip():
+                            skipped += 1
+                            continue
+                except Exception:
+                    pass
 
             caption = self.caption_image(img_p, trigger_word=trigger_word)
-            with open(txt_p, "w", encoding="utf-8") as f:
-                f.write(caption)
-            success += 1
+            if caption:
+                with open(txt_p, "w", encoding="utf-8") as f:
+                    f.write(caption)
+                success += 1
 
-        console.print(f"[bold green]✓ Gán nhãn hoàn tất![/bold green] Đã xử lý: {success}, Bỏ qua: {skipped}")
+        console.print(f"[bold green]🎉 Hoàn tất gán nhãn {success} ảnh với Florence-2![/bold green]")
         return {"processed": success, "skipped": skipped}
