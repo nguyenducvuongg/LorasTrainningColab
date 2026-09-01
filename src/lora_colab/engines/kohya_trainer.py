@@ -1,6 +1,5 @@
 import os
 import subprocess
-import toml
 from typing import Dict, Any, List, Optional
 from .base import BaseTrainer
 from ..core.config import LoRAConfig
@@ -12,6 +11,8 @@ class KohyaTrainer(BaseTrainer):
     """
     Kohya_ss (sd-scripts) Trainer Engine.
     Industry standard for SDXL 1.0, Pony Diffusion V6, Illustrious-XL, SD 1.5, and SD 3.5.
+    """
+
     def _resolve_script_path(self) -> str:
         script_name = self._determine_script_name()
         possible_paths = [
