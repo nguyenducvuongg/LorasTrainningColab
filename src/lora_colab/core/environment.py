@@ -219,7 +219,11 @@ class AutoEnvironmentManager:
             if not os.path.exists(repo_path):
                 console.print(f"[cyan]📥 Tải và chuẩn bị backend [bold]{name}[/bold]...[/cyan]")
                 try:
-                    subprocess.check_call(["git", "clone", "--depth", "1", repo_url, repo_path])
+                    # FIX: thêm --recurse-submodules để clone đầy đủ submodule
+                    subprocess.check_call([
+                        "git", "clone", "--depth", "1", "--recurse-submodules",
+                        repo_url, repo_path
+                    ])
                     console.print(f"[green]✓ Backend {name} đã sẵn sàng![/green]")
                 except Exception as e:
                     logger.warning(f"Could not clone {name}: {e}")
@@ -280,7 +284,19 @@ class AutoEnvironmentManager:
         "flatten_dict": "flatten_dict",
         "lpips": "lpips",
         "av": "av",
-        "oyaml": "oyaml"
+        "oyaml": "oyaml",
+        # Thêm module phổ biến còn thiếu
+        "xformers": "xformers",
+        "flash_attn": "flash-attn",
+        "triton": "triton",
+        "onnxruntime": "onnxruntime-gpu",
+        "sklearn": "scikit-learn",
+        "skimage": "scikit-image",
+        "tqdm": "tqdm",
+        "psutil": "psutil",
+        "requests": "requests",
+        "sentencepiece": "sentencepiece",
+        "lycoris": "lycoris-lora",
     }
 
     @classmethod

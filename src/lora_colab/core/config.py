@@ -10,7 +10,7 @@ except ImportError:
         tomllib = None
 
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from .logger import setup_logger
 from .hardware import GPUProfile
 
@@ -22,11 +22,28 @@ class DatasetConfig(BaseModel):
     task_type: str = "character"  # character, face, body, style, enhancement, control
     resolution: int = 1024
     enable_bucketing: bool = True
+    # Bucket resolution — hỗ trợ cả hai tên để tương thích với Kohya và codebase cũ
     min_bucket_res: int = 512
     max_bucket_res: int = 2048
+    min_bucket_resolution: int = 512   # alias cho Kohya trainer
+    max_bucket_resolution: int = 2048  # alias cho Kohya trainer
     caption_extension: str = ".txt"
     shuffle_caption: bool = True
     keep_tokens: int = 1
+
+    @model_validator(mode="after")
+    def sync_bucket_aliases(self) -> "DatasetConfig":
+        """Đồng bộ hai cặp tên field bucket resolution với nhau."""
+        # Nếu user set min_bucket_res, sync sang min_bucket_resolution
+        if self.min_bucket_res != 512:
+            self.min_bucket_resolution = self.min_bucket_res
+        elif self.min_bucket_resolution != 512:
+            self.min_bucket_res = self.min_bucket_resolution
+        if self.max_bucket_res != 2048:
+            self.max_bucket_resolution = self.max_bucket_res
+        elif self.max_bucket_resolution != 2048:
+            self.max_bucket_res = self.max_bucket_resolution
+        return self
 
 class NetworkConfig(BaseModel):
     network_module: str = "networks.lora"  # lora, lycoris, dora
@@ -64,6 +81,13 @@ class TrainingConfig(BaseModel):
     gradient_checkpointing: bool = True
     cache_latents: bool = True
     cache_latents_to_disk: bool = True
+    cache_text_encoder_outputs: bool = False  # Cho Kohya — không dùng khi train TE
+
+    # Advanced Training Params
+    noise_offset: float = 0.0             # Noise offset cho SD1.5/SDXL
+    min_snr_gamma: Optional[float] = None # SNR loss weighting (5.0 recommended)
+    network_weights: Optional[str] = None  # Cho phép tiếp tục train từ LoRA cũ
+    v_parameterization: bool = False       # Cho SD 2.x / v-prediction models
     
     # Monitoring & Notifications
     discord_webhook_url: Optional[str] = None

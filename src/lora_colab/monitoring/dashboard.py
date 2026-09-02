@@ -124,16 +124,27 @@ class LiveTrainingDashboard:
         if len(self.recent_logs) > self.max_log_lines:
             self.recent_logs.pop(0)
 
-        # 1. Trích xuất Step / Epoch
-        step_match = re.search(r"step[s]?\s*[:=]?\s*(\d+)[ /]+(\d+)", clean_line, re.IGNORECASE)
+        # 1. Trích xuất Step / Epoch — hỗ trợ cả Kohya và AI-Toolkit formats
+        # AI-Toolkit format: "step: 100/1000" hoặc "step=100"
+        # Kohya format: "steps: 100/1000" hoặc "global_step=100"
+        step_match = re.search(r"(?:step[s]?)\s*[:=]\s*(\d+)\s*/\s*(\d+)", clean_line, re.IGNORECASE)
         if step_match:
             try:
                 self.current_step = int(step_match.group(1))
                 self.total_steps = max(self.total_steps, int(step_match.group(2)))
             except Exception:
                 pass
+        else:
+            # AI-Toolkit: "step=100" hoặc "global_step=100" không có tổng
+            gs_match = re.search(r"(?:global_step|step)\s*=\s*(\d+)", clean_line, re.IGNORECASE)
+            if gs_match:
+                try:
+                    self.current_step = int(gs_match.group(1))
+                except Exception:
+                    pass
 
-        epoch_match = re.search(r"epoch\s*[:=]?\s*(\d+)[ /]+(\d+)", clean_line, re.IGNORECASE)
+        # Epoch detection
+        epoch_match = re.search(r"epoch\s*[:=]?\s*(\d+)\s*/\s*(\d+)", clean_line, re.IGNORECASE)
         if epoch_match:
             try:
                 self.current_epoch = int(epoch_match.group(1))
@@ -141,8 +152,8 @@ class LiveTrainingDashboard:
             except Exception:
                 pass
 
-        # 2. Trích xuất Loss
-        loss_match = re.search(r"loss\s*[:=]\s*([0-9.]+)", clean_line, re.IGNORECASE)
+        # 2. Trích xuất Loss — AI-Toolkit: "loss: 0.1234" hoặc "train_loss=0.1234"
+        loss_match = re.search(r"(?:train_loss|loss)\s*[:=]\s*([0-9]+\.[0-9]+)", clean_line, re.IGNORECASE)
         if loss_match:
             try:
                 self.current_loss = float(loss_match.group(1))
@@ -150,23 +161,24 @@ class LiveTrainingDashboard:
                 pass
 
         # 3. Trích xuất Learning Rate (LR)
-        lr_match = re.search(r"lr\s*[:=]\s*([0-9.eE+-]+)", clean_line, re.IGNORECASE)
+        lr_match = re.search(r"(?:lr|learning_rate)\s*[:=]\s*([0-9.eE+-]+)", clean_line, re.IGNORECASE)
         if lr_match:
             try:
                 self.current_lr = float(lr_match.group(1))
             except Exception:
                 pass
 
-        # 4. Trích xuất tốc độ & ETA
+        # 4. Trích xuất tốc độ & ETA — "1.23it/s" hoặc "0.45s/it"
         speed_match = re.search(r"([0-9.]+\s*it/s|[0-9.]+\s*s/it)", clean_line)
         if speed_match:
             self.speed_str = speed_match.group(1)
 
-        eta_match = re.search(r"<([0-9:]+)", clean_line)
+        # ETA: tqdm format "<0:12:34" hoặc "ETA: 0:12:34"
+        eta_match = re.search(r"(?:<|ETA:\s*)([0-9]+:[0-9:]+)", clean_line)
         if eta_match:
             self.eta_str = eta_match.group(1)
 
-        # Quét tìm ảnh sample mới
+        # 5. Quét tìm ảnh sample mới
         self._find_latest_sample_image()
 
         # Cập nhật giao diện (tối đa 2 lần/giây để mượt mà không lag trình duyệt)
@@ -174,6 +186,7 @@ class LiveTrainingDashboard:
         if now - self.last_render_time > 0.5:
             self.render()
             self.last_render_time = now
+
 
     def _render_html(self) -> str:
         """Tạo HTML5/CSS3 hiện đại, tinh gọn với chiều cao cố định (100vh compact)."""

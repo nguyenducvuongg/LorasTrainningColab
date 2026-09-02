@@ -39,25 +39,29 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "auxiliary_files": ["t5xxl-fp8", "clip-l", "flux-vae"]
     },
     "flux-kontext": {
-        "name": "FLUX-Kontext",
+        "name": "FLUX.1-Kontext-dev (Black Forest Labs)",
         "category": "models/flux_kontext",
-        "filename": "flux1-kontext.safetensors",
-        "repo_id": "camenduru/FLUX.1-dev",
-        "hf_filename": "flux1-dev.safetensors",
+        "filename": "flux1-kontext-dev.safetensors",
+        "repo_id": "black-forest-labs/FLUX.1-Kontext-dev",
+        "hf_filename": "flux1-kontext-dev.safetensors",
+        # Public mirror fallback (Kontext là model mới, dùng flux-dev mirror khi chưa có ungated)
         "direct_url": "https://huggingface.co/camenduru/FLUX.1-dev/resolve/main/flux1-dev.safetensors",
         "min_size_gb": 20.0,
-        "is_gated": False,
+        "is_gated": True,  # Kontext-dev cần đăng nhập HF — user cần set HF_TOKEN
+        "note": "Yêu cầu Hugging Face Token (FLUX.1-Kontext-dev là gated model). Đặt HF_TOKEN trong Colab Secrets.",
         "auxiliary_files": ["t5xxl-fp8", "clip-l", "flux-vae"]
     },
     "krea2-raw": {
-        "name": "Krea2-Raw / Creative Diffusion",
+        "name": "Krea2-Raw / Creative Diffusion (SDXL-based)",
         "category": "models/krea",
         "filename": "krea2-raw.safetensors",
-        "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
-        "hf_filename": "sd_xl_base_1.0.safetensors",
+        "repo_id": "Krea/KREA-Raw",
+        "hf_filename": "krea2-raw.safetensors",
+        # Fallback: dùng SDXL base khi Krea chưa public
         "direct_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
         "min_size_gb": 6.0,
         "is_gated": False,
+        "note": "Krea2-Raw là kiến trúc SDXL. Nếu chưa có model chính thức, sẽ dùng SDXL base.",
         "auxiliary_files": ["sdxl-vae"]
     },
     "sdxl-base": {
@@ -94,12 +98,13 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "auxiliary_files": ["sdxl-vae"]
     },
     "sd35-medium": {
-        "name": "Stable Diffusion 3.5 Medium (Public Mirror)",
+        "name": "Stable Diffusion 3.5 Medium (Hugging Face Public)",
         "category": "models/sd35",
         "filename": "sd3.5_medium.safetensors",
-        "repo_id": "stabilityai/stable-diffusion-xl-base-1.0",
-        "hf_filename": "sd_xl_base_1.0.safetensors",
-        "direct_url": "https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/main/sd_xl_base_1.0.safetensors",
+        # FIX: dùng đúng repo SD 3.5 Medium thay vì SDXL base
+        "repo_id": "adamo1139/stable-diffusion-3.5-medium-ungated",
+        "hf_filename": "sd3.5_medium.safetensors",
+        "direct_url": "https://huggingface.co/adamo1139/stable-diffusion-3.5-medium-ungated/resolve/main/sd3.5_medium.safetensors",
         "min_size_gb": 5.0,
         "is_gated": False,
         "auxiliary_files": ["clip-l", "clip-g", "t5xxl-fp8"]
