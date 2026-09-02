@@ -267,6 +267,7 @@ class AutoEnvironmentManager:
     KNOWN_MODULE_MAP = {
         "optimum": "optimum-quanto",
         "quanto": "optimum-quanto",
+        "controlnet_aux": "controlnet-aux",
         "open_clip": "open-clip-torch",
         "cv2": "opencv-python-headless",
         "PIL": "pillow",

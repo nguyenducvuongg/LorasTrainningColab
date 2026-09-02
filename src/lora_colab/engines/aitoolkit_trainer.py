@@ -54,6 +54,7 @@ class AIToolkitTrainer(BaseTrainer):
         ai_toolkit_packages = [
             "oyaml>=1.0",
             "optimum-quanto>=0.2.0",
+            "controlnet-aux>=0.0.7",
             "av>=11.0.0",
             "lpips>=0.1.4",
             "albumentations>=1.4.0",
@@ -84,8 +85,10 @@ class AIToolkitTrainer(BaseTrainer):
         d_cfg = cfg.dataset
         n_cfg = cfg.network
 
-        is_flux = "flux" in t_cfg.model_family.lower()
-        quantize_base = t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()
+        # Nhận diện chính xác mọi biến thể của dòng Flux (Flux.1-dev, Schnell, Kontext, Krea2-raw, Chroma)
+        model_str = f"{t_cfg.model_family} {t_cfg.base_model_path}".lower()
+        is_flux = any(k in model_str for k in ["flux", "krea", "chroma", "kontext", "black-forest-labs", "schnell", "dev", "raw"])
+        quantize_base = True if (is_flux or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()) else False
 
         ai_toolkit_yaml = {
             "job": "extension",
@@ -136,6 +139,7 @@ class AIToolkitTrainer(BaseTrainer):
                             "name_or_path": t_cfg.base_model_path,
                             "is_flux": is_flux,
                             "quantize": quantize_base,
+                            "low_vram": True if is_flux else False,
                         },
                         "sample": {
                             "sampler": "flowmatch" if is_flux else "euler",
