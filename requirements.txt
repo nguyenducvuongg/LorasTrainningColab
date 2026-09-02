@@ -27,10 +27,16 @@ numpy>=1.24.0
 # Configuration & Utilities
 pydantic>=2.6.0
 pyyaml>=6.0.1
+oyaml>=1.0
 toml>=0.10.2
 tqdm>=4.66.0
 requests>=2.31.0
 rich>=13.7.0
+albumentations>=1.4.0
+flatten_dict>=0.4.0
+k-diffusion>=0.1.0
+open-clip-torch>=2.24.0
+optimum-quanto>=0.2.0
 
 # Vision & Multimodal APIs for Captioning
 google-genai>=0.1.0

@@ -2,7 +2,8 @@ import os
 import sys
 import yaml
 import subprocess
-from typing import Dict, Any, Optional, List
+import importlib.metadata
+from typing import Dict, Any, Optional, List, Tuple
 from .base import BaseTrainer
 from ..core.config import LoRAConfig
 from ..core.logger import setup_logger, console
@@ -14,6 +15,39 @@ class AIToolkitTrainer(BaseTrainer):
     AI-Toolkit (Ostris) Trainer Engine.
     Optimized for Flux.1-dev, Flux.1-schnell, Flux-Kontext, and Krea2-raw LoRA training.
     """
+
+    @classmethod
+    def _ensure_dependencies(cls):
+        """Tự động kiểm tra và cài đặt đầy đủ các gói cần thiết cho AI-Toolkit."""
+        needed_packages = [
+            "oyaml",
+            "albumentations",
+            "flatten_dict",
+            "k-diffusion",
+            "open-clip-torch",
+            "invisible-watermark",
+            "clean-fid",
+            "optimum-quanto",
+            "tensorboard"
+        ]
+        missing = []
+        for pkg in needed_packages:
+            norm_name = pkg.replace("-", "_")
+            try:
+                importlib.metadata.version(norm_name)
+            except importlib.metadata.PackageNotFoundError:
+                try:
+                    importlib.metadata.version(pkg)
+                except importlib.metadata.PackageNotFoundError:
+                    missing.append(pkg)
+
+        if missing:
+            console.print(f"[bold yellow]📦 Tự động cài đặt bổ sung gói cần cho AI-Toolkit:[/bold yellow] [dim]{', '.join(missing)}[/dim]")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q"] + missing)
+                console.print("[bold green]✓ Cài đặt thành công các gói phụ trợ AI-Toolkit![/bold green]")
+            except Exception as e:
+                logger.warning(f"Warning installing AI-Toolkit dependencies: {e}")
 
     def build_command_or_config(self) -> Dict[str, Any]:
         cfg = self.config
@@ -95,7 +129,7 @@ class AIToolkitTrainer(BaseTrainer):
 
         return ai_toolkit_yaml
 
-    def _resolve_run_cmd(self, config_path: str) -> List[str]:
+    def _resolve_run_cmd(self, config_path: str) -> Tuple[List[str], Optional[str]]:
         possible_paths = [
             "/content/backends/ai-toolkit/run.py",
             "/content/ai-toolkit/run.py",
@@ -104,10 +138,13 @@ class AIToolkitTrainer(BaseTrainer):
         ]
         for p in possible_paths:
             if os.path.exists(p):
-                return [sys.executable, p, config_path]
-        return [sys.executable, "-m", "ai_toolkit.run", config_path]
+                return [sys.executable, p, config_path], os.path.dirname(os.path.abspath(p))
+        return [sys.executable, "-m", "ai_toolkit.run", config_path], None
 
     def train(self, resume_from: Optional[str] = None) -> bool:
+        # 1. Đảm bảo mọi gói phụ trợ (oyaml, albumentations...) đã sẵn sàng
+        self._ensure_dependencies()
+
         config_dict = self.build_command_or_config()
         temp_config_path = os.path.join(self.config.training.checkpoint_dir, "ai_toolkit_active_config.yaml")
         os.makedirs(os.path.dirname(temp_config_path), exist_ok=True)
@@ -115,16 +152,27 @@ class AIToolkitTrainer(BaseTrainer):
         with open(temp_config_path, "w", encoding="utf-8") as f:
             yaml.dump(config_dict, f, default_flow_style=False)
 
-        console.print(f"[bold green]🚀 Launching AI-Toolkit Trainer for {self.config.training.model_family}...[/bold green]")
-        console.print(f"  • Config: [cyan]{temp_config_path}[/cyan]")
-        console.print(f"  • Output Checkpoints directly to: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
+        console.print(f"[bold green]🚀 Khởi chạy AI-Toolkit Trainer cho {self.config.training.model_family}...[/bold green]")
+        console.print(f"  • Cấu hình: [cyan]{temp_config_path}[/cyan]")
+        console.print(f"  • Lưu checkpoint trực tiếp tại: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
 
-        # Run AI-Toolkit process with auto-resolved runner
-        cmd = self._resolve_run_cmd(temp_config_path)
+        cmd, ai_dir = self._resolve_run_cmd(temp_config_path)
+        env = os.environ.copy()
+        if ai_dir and os.path.exists(ai_dir):
+            env["PYTHONPATH"] = f"{ai_dir}:{env.get('PYTHONPATH', '')}"
+
         try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in process.stdout:
-                print(line, end="")
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            for line in iter(process.stdout.readline, ''):
+                sys.stdout.write(line)
+                sys.stdout.flush()
             process.wait()
             return process.returncode == 0
         except Exception as e:

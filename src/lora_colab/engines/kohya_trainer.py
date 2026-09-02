@@ -103,15 +103,29 @@ class KohyaTrainer(BaseTrainer):
     def train(self, resume_from: Optional[str] = None) -> bool:
         cmd = self.build_command_or_config(resume_from=resume_from)
         
-        console.print(f"[bold green]🚀 Launching Kohya Trainer for {self.config.training.model_family}...[/bold green]")
+        console.print(f"[bold green]🚀 Khởi chạy Kohya Trainer cho {self.config.training.model_family}...[/bold green]")
         console.print(f"  • Base Model: [cyan]{self.config.training.base_model_path}[/cyan]")
-        console.print(f"  • Output Directory (Directly to Drive): [yellow]{self.config.training.checkpoint_dir}[/yellow]")
+        console.print(f"  • Lưu checkpoint trực tiếp tại: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
         console.print(f"  • Command: [dim]{' '.join(cmd)}[/dim]")
 
+        env = os.environ.copy()
+        script_p = self._resolve_script_path()
+        if script_p and os.path.exists(script_p):
+            sd_dir = os.path.dirname(os.path.abspath(script_p))
+            env["PYTHONPATH"] = f"{sd_dir}:{env.get('PYTHONPATH', '')}"
+
         try:
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            for line in process.stdout:
-                print(line, end="")
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+            for line in iter(process.stdout.readline, ''):
+                sys.stdout.write(line)
+                sys.stdout.flush()
             process.wait()
             return process.returncode == 0
         except Exception as e:
