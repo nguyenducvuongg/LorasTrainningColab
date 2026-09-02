@@ -5,6 +5,8 @@ from typing import Dict, Any, List, Optional
 from .base import BaseTrainer
 from ..core.config import LoRAConfig
 from ..core.logger import setup_logger, console
+from ..core.environment import AutoEnvironmentManager
+from ..monitoring.dashboard import LiveTrainingDashboard
 
 logger = setup_logger(__name__)
 
@@ -14,13 +16,31 @@ class MusubiTrainer(BaseTrainer):
     State-of-the-art trainer for Wan 2.1, Qwen2-VL, Z-Image/Kolors, and video architectures.
     """
 
+    BACKEND_REPO_URL = "https://github.com/kohya-ss/musubi-tuner.git"
     DEFAULT_MUSUBI_DIR = "/content/backends/musubi-tuner"
 
+    @classmethod
+    def _ensure_backend_ready(cls):
+        """Đảm bảo kho mã nguồn Musubi-Tuner đã sẵn sàng."""
+        if os.path.exists("/content") and not os.path.exists(cls.DEFAULT_MUSUBI_DIR):
+            console.print("[bold cyan]📥 Tải và cấu hình backend chính thức [bold]Musubi-Tuner[/bold]...[/bold cyan]")
+            try:
+                os.makedirs(os.path.dirname(cls.DEFAULT_MUSUBI_DIR), exist_ok=True)
+                subprocess.check_call(["git", "clone", "--depth", "1", "--recursive", cls.BACKEND_REPO_URL, cls.DEFAULT_MUSUBI_DIR])
+                console.print("[bold green]✓ Musubi-Tuner đã sẵn sàng![/bold green]")
+            except Exception as e:
+                logger.warning(f"Could not clone musubi-tuner: {e}")
+
+        if os.path.exists(cls.DEFAULT_MUSUBI_DIR):
+            AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_MUSUBI_DIR)
+
     def _resolve_runner_path(self) -> str:
+        self._ensure_backend_ready()
         possible_paths = [
             os.path.join(self.DEFAULT_MUSUBI_DIR, "train.py"),
             os.path.join(self.DEFAULT_MUSUBI_DIR, "wan_train_network.py"),
             os.path.join("/content/musubi-tuner/train.py"),
+            os.path.join(os.getcwd(), "backends", "musubi-tuner", "train.py"),
             os.path.join(os.getcwd(), "musubi-tuner/train.py"),
             "train.py"
         ]
@@ -46,7 +66,7 @@ class MusubiTrainer(BaseTrainer):
             f"--network_dim={n_cfg.network_dim}",
             f"--network_alpha={n_cfg.network_alpha}",
             f"--learning_rate={t_cfg.learning_rate}",
-            f"--max_train_epochs={t_cfg.max_train_epochs}",
+            f"--max_train_epochs={t_cfg.epochs}",
             f"--save_every_n_epochs=1",
             "--gradient_checkpointing",
         ]
@@ -67,5 +87,20 @@ class MusubiTrainer(BaseTrainer):
         if os.path.exists(self.DEFAULT_MUSUBI_DIR):
             env["PYTHONPATH"] = f"{self.DEFAULT_MUSUBI_DIR}:{env.get('PYTHONPATH', '')}"
 
-        from ..core.environment import AutoEnvironmentManager
-        return AutoEnvironmentManager.execute_with_self_healing(cmd, env=env)
+        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
+        dashboard = LiveTrainingDashboard(
+            model_name=self.config.training.model_family,
+            engine_name="Musubi-Tuner",
+            total_steps=total_steps,
+            total_epochs=self.config.training.epochs,
+            output_dir=self.config.training.checkpoint_dir
+        )
+
+        success = AutoEnvironmentManager.execute_with_self_healing(
+            cmd,
+            env=env,
+            on_log_line=dashboard.parse_log_line
+        )
+
+        dashboard.close(success=success)
+        return success

@@ -43,6 +43,10 @@ class AutoEnvironmentManager:
 
     # Packages that should never be forcefully overwritten to protect Colab PyTorch CUDA acceleration
     PROTECTED_SYSTEM_PACKAGES = {"torch", "torchvision", "torchaudio", "setuptools", "pip"}
+    BLACKLISTED_PYPI_PACKAGES = {
+        "ai_toolkit", "ai-toolkit", "sd_scripts", "sd-scripts",
+        "musubi_tuner", "musubi-tuner", "dataslots", "wget"
+    }
 
     @classmethod
     def is_package_installed(cls, package_name: str) -> bool:
@@ -83,6 +87,14 @@ class AutoEnvironmentManager:
         if not package_list:
             return True
 
+        # Lọc bỏ các gói trùng tên nằm trong blacklist
+        valid_packages = [
+            pkg for pkg in package_list
+            if re.split(r"[><=~;]", pkg)[0].strip().lower() not in cls.BLACKLISTED_PYPI_PACKAGES
+        ]
+        if not valid_packages:
+            return True
+
         has_drive = os.path.exists("/content/drive/MyDrive")
         cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--no-warn-script-location"]
 
@@ -97,7 +109,7 @@ class AutoEnvironmentManager:
 
         if silent:
             cmd.append("-q")
-        cmd.extend(package_list)
+        cmd.extend(valid_packages)
 
         try:
             subprocess.check_call(cmd)
@@ -109,14 +121,14 @@ class AutoEnvironmentManager:
                         sys.executable, "-m", "pip", "download",
                         "--prefer-binary", "--no-deps",
                         "-d", cls.DRIVE_WHEEL_DIR, "-q"
-                    ] + package_list
+                    ] + valid_packages
                     subprocess.run(download_cmd, check=False)
                 except Exception:
                     pass
 
             return True
         except Exception as e:
-            logger.warning(f"Warning installing packages {package_list}: {e}")
+            logger.warning(f"Warning installing packages {valid_packages}: {e}")
             return False
 
     @classmethod
@@ -137,7 +149,7 @@ class AutoEnvironmentManager:
                         continue
                     pkg_spec = line.split(";")[0].strip()
                     pkg_name = re.split(r"[><=~]", pkg_spec)[0].strip()
-                    if not pkg_name or pkg_name.lower() in cls.PROTECTED_SYSTEM_PACKAGES:
+                    if not pkg_name or pkg_name.lower() in cls.PROTECTED_SYSTEM_PACKAGES or pkg_name.lower() in cls.BLACKLISTED_PYPI_PACKAGES:
                         continue
                     if not cls.is_package_installed(pkg_name):
                         missing.append(pkg_spec)
@@ -258,10 +270,11 @@ class AutoEnvironmentManager:
         cmd: List[str],
         env: Optional[Dict[str, str]] = None,
         cwd: Optional[str] = None,
-        max_retries: int = 2
+        max_retries: int = 2,
+        on_log_line: Optional[Any] = None
     ) -> bool:
         """
-        Thực thi tiến trình với cơ chế tự sửa lỗi (Self-Healing):
+        Thực thi tiến trình với cơ chế tự sửa lỗi (Self-Healing) và hỗ trợ cập nhật Live Dashboard:
         Nếu phát hiện ModuleNotFoundError trong log, tự động bắt tên module, cài đặt qua pip và chạy lại!
         """
         for attempt in range(max_retries + 1):
@@ -275,19 +288,26 @@ class AutoEnvironmentManager:
                 bufsize=1
             )
 
-            output_lines = []
             missing_module = None
 
             for line in iter(process.stdout.readline, ''):
-                sys.stdout.write(line)
-                sys.stdout.flush()
-                output_lines.append(line)
+                if on_log_line is not None:
+                    try:
+                        on_log_line(line)
+                    except Exception:
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                else:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
 
                 # Bắt lỗi ModuleNotFoundError: No module named 'xyz'
                 if "ModuleNotFoundError" in line and "No module named" in line:
                     match = re.search(r"No module named ['\"]([^'\"]+)['\"]", line)
                     if match:
-                        missing_module = match.group(1).split(".")[0]
+                        mod = match.group(1).split(".")[0].strip().lower()
+                        if mod not in cls.BLACKLISTED_PYPI_PACKAGES:
+                            missing_module = mod
 
             process.wait()
 

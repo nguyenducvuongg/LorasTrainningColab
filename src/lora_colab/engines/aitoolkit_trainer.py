@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional, List, Tuple
 from .base import BaseTrainer
 from ..core.config import LoRAConfig
 from ..core.logger import setup_logger, console
+from ..core.environment import AutoEnvironmentManager
+from ..monitoring.dashboard import LiveTrainingDashboard
 
 logger = setup_logger(__name__)
 
@@ -16,38 +18,41 @@ class AIToolkitTrainer(BaseTrainer):
     Optimized for Flux.1-dev, Flux.1-schnell, Flux-Kontext, and Krea2-raw LoRA training.
     """
 
-    @classmethod
-    def _ensure_dependencies(cls):
-        """Tự động kiểm tra và cài đặt đầy đủ các gói cần thiết cho AI-Toolkit."""
-        needed_packages = [
-            "oyaml",
-            "albumentations",
-            "flatten_dict",
-            "k-diffusion",
-            "open-clip-torch",
-            "invisible-watermark",
-            "clean-fid",
-            "optimum-quanto",
-            "tensorboard"
-        ]
-        missing = []
-        for pkg in needed_packages:
-            norm_name = pkg.replace("-", "_")
-            try:
-                importlib.metadata.version(norm_name)
-            except importlib.metadata.PackageNotFoundError:
-                try:
-                    importlib.metadata.version(pkg)
-                except importlib.metadata.PackageNotFoundError:
-                    missing.append(pkg)
+    BACKEND_REPO_URL = "https://github.com/ostris/ai-toolkit.git"
+    DEFAULT_BACKEND_DIR = "/content/backends/ai-toolkit"
 
-        if missing:
-            console.print(f"[bold yellow]📦 Tự động cài đặt bổ sung gói cần cho AI-Toolkit:[/bold yellow] [dim]{', '.join(missing)}[/dim]")
+    @classmethod
+    def _ensure_backend_ready(cls):
+        """
+        Đảm bảo kho mã nguồn Ostris AI-Toolkit đã được clone chuẩn xác và
+        dọn dẹp các gói PyPI trùng tên không liên quan (ai-toolkit, dataslots, wget).
+        """
+        # 1. Gỡ bỏ gói PyPI trùng tên nếu đã lỡ cài nhầm
+        if AutoEnvironmentManager.is_package_installed("dataslots") or AutoEnvironmentManager.is_package_installed("ai_toolkit"):
+            console.print("[yellow]🧹 Đang tự động gỡ bỏ thư viện PyPI 'ai-toolkit' trùng tên không liên quan...[/yellow]")
             try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-q"] + missing)
-                console.print("[bold green]✓ Cài đặt thành công các gói phụ trợ AI-Toolkit![/bold green]")
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "uninstall", "-y", "ai-toolkit", "ai_toolkit", "dataslots", "wget"],
+                    check=False,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+            except Exception:
+                pass
+
+        # 2. Clone kho mã nguồn chính thức của Ostris nếu chưa có
+        if os.path.exists("/content") and not os.path.exists(cls.DEFAULT_BACKEND_DIR):
+            console.print("[bold cyan]📥 Tải và cấu hình backend chính thức [bold]Ostris/AI-Toolkit[/bold]...[/bold cyan]")
+            try:
+                os.makedirs(os.path.dirname(cls.DEFAULT_BACKEND_DIR), exist_ok=True)
+                subprocess.check_call(["git", "clone", "--depth", "1", cls.BACKEND_REPO_URL, cls.DEFAULT_BACKEND_DIR])
+                console.print("[bold green]✓ AI-Toolkit (Ostris) đã sẵn sàng![/bold green]")
             except Exception as e:
-                logger.warning(f"Warning installing AI-Toolkit dependencies: {e}")
+                logger.warning(f"Could not clone ai-toolkit: {e}")
+
+        # 3. Quét và cài đặt các phụ thuộc cần thiết cho AI-Toolkit
+        if os.path.exists(cls.DEFAULT_BACKEND_DIR):
+            AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_BACKEND_DIR)
 
     def build_command_or_config(self) -> Dict[str, Any]:
         cfg = self.config
@@ -132,6 +137,7 @@ class AIToolkitTrainer(BaseTrainer):
     def _resolve_run_cmd(self, config_path: str) -> Tuple[List[str], Optional[str]]:
         possible_paths = [
             "/content/backends/ai-toolkit/run.py",
+            os.path.join(os.getcwd(), "backends", "ai-toolkit", "run.py"),
             "/content/ai-toolkit/run.py",
             os.path.join(os.getcwd(), "ai-toolkit", "run.py"),
             "ai-toolkit/run.py"
@@ -139,11 +145,15 @@ class AIToolkitTrainer(BaseTrainer):
         for p in possible_paths:
             if os.path.exists(p):
                 return [sys.executable, p, config_path], os.path.dirname(os.path.abspath(p))
-        return [sys.executable, "-m", "ai_toolkit.run", config_path], None
+
+        # Nếu chưa tìm thấy, gọi đảm bảo backend và trả về file run.py chính xác
+        self._ensure_backend_ready()
+        target_run = os.path.join(self.DEFAULT_BACKEND_DIR, "run.py")
+        return [sys.executable, target_run, config_path], self.DEFAULT_BACKEND_DIR
 
     def train(self, resume_from: Optional[str] = None) -> bool:
-        # 1. Đảm bảo mọi gói phụ trợ (oyaml, albumentations...) đã sẵn sàng
-        self._ensure_dependencies()
+        # 1. Đảm bảo backend Ostris/ai-toolkit đã sẵn sàng
+        self._ensure_backend_ready()
 
         config_dict = self.build_command_or_config()
         temp_config_path = os.path.join(self.config.training.checkpoint_dir, "ai_toolkit_active_config.yaml")
@@ -161,5 +171,21 @@ class AIToolkitTrainer(BaseTrainer):
         if ai_dir and os.path.exists(ai_dir):
             env["PYTHONPATH"] = f"{ai_dir}:{env.get('PYTHONPATH', '')}"
 
-        from ..core.environment import AutoEnvironmentManager
-        return AutoEnvironmentManager.execute_with_self_healing(cmd, env=env)
+        # 2. Khởi tạo Live Dashboard gọn gàng trong 1 viewheight
+        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
+        dashboard = LiveTrainingDashboard(
+            model_name=self.config.training.model_family,
+            engine_name="AI-Toolkit (Ostris)",
+            total_steps=total_steps,
+            total_epochs=self.config.training.epochs,
+            output_dir=self.config.training.checkpoint_dir
+        )
+
+        success = AutoEnvironmentManager.execute_with_self_healing(
+            cmd,
+            env=env,
+            on_log_line=dashboard.parse_log_line
+        )
+
+        dashboard.close(success=success)
+        return success
