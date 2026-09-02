@@ -25,6 +25,7 @@ class GDriveWorkspaceManager:
         "models/qwen",
         "models/text_encoders",
         "models/vae",
+        "models/captioners",
         # Datasets
         "datasets/01_face",
         "datasets/02_character",
@@ -45,7 +46,7 @@ class GDriveWorkspaceManager:
     @classmethod
     def is_colab(cls) -> bool:
         """Check if executing inside Google Colab."""
-        return "google.colab" in sys.modules
+        return "google.colab" in sys.modules or os.path.exists("/content")
 
     @classmethod
     def ensure_drive_connected(cls, test_path: str = "/content/drive/MyDrive") -> bool:
@@ -71,16 +72,19 @@ class GDriveWorkspaceManager:
 
     @classmethod
     def mount_google_drive(cls) -> bool:
-        """Mounts Google Drive if inside Colab."""
+        """Mounts Google Drive immediately if inside Colab."""
         if cls.is_colab():
+            if os.path.exists("/content/drive/MyDrive"):
+                console.print("[bold green]✓ Google Drive đã được kết nối sẵn tại /content/drive[/bold green]")
+                return True
             try:
                 from google.colab import drive
-                logger.info("[bold cyan]Mounting Google Drive...[/bold cyan]")
+                console.print("[bold cyan]🚀 Đang yêu cầu kết nối Google Drive...[/bold cyan]")
                 drive.mount('/content/drive', force_remount=False)
-                logger.info("[bold green]✓ Google Drive successfully mounted at /content/drive[/bold green]")
+                console.print("[bold green]✓ Google Drive đã kết nối thành công tại /content/drive![/bold green]")
                 return True
             except Exception as e:
-                logger.error(f"[bold red]Failed to mount Google Drive: {e}[/bold red]")
+                logger.error(f"Failed to mount Google Drive: {e}")
                 return False
         else:
             logger.info(f"Running outside Google Colab. Using local workspace: {cls.LOCAL_FALLBACK_ROOT}")
@@ -105,14 +109,17 @@ class GDriveWorkspaceManager:
             if os.path.exists(full_path):
                 existing_count += 1
             else:
-                os.makedirs(full_path, exist_ok=True)
-                created_count += 1
+                try:
+                    os.makedirs(full_path, exist_ok=True)
+                    created_count += 1
+                except Exception as e:
+                    logger.warning(f"Could not create folder {full_path}: {e}")
 
         console.rule("[bold cyan]Google Drive Workspace Status[/bold cyan]")
         console.print(f"[bold green]Workspace Root:[/bold green] [yellow]{root_dir}[/yellow]")
         console.print(f"  • Existing Folders (Preserved): [bold green]{existing_count}[/bold green]")
         console.print(f"  • Newly Created Folders: [bold cyan]{created_count}[/bold cyan]")
-        console.print(f"[bold green]✓ All models, datasets & LoRA checkpoints will be saved 100% directly to Drive.[/bold green]")
+        console.print(f"[bold green]✓ Tất cả models, datasets & LoRA checkpoints sẽ được lưu 100% trực tiếp trên Google Drive.[/bold green]")
         console.rule()
 
         return path_map
@@ -131,12 +138,15 @@ class GDriveWorkspaceManager:
             for file in files:
                 if file.endswith((".safetensors", ".ckpt", ".pt", ".bin", ".gguf")):
                     full_p = os.path.join(root_p, file)
-                    size_gb = round(os.path.getsize(full_p) / (1024 ** 3), 2)
-                    rel_cat = os.path.relpath(root_p, models_dir)
-                    found_models.append({
-                        "category": rel_cat,
-                        "filename": file,
-                        "size_gb": size_gb,
-                        "path": full_p
-                    })
+                    try:
+                        size_gb = round(os.path.getsize(full_p) / (1024 ** 3), 2)
+                        rel_cat = os.path.relpath(root_p, models_dir)
+                        found_models.append({
+                            "category": rel_cat,
+                            "filename": file,
+                            "size_gb": size_gb,
+                            "path": full_p
+                        })
+                    except Exception:
+                        pass
         return found_models

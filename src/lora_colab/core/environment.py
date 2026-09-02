@@ -192,9 +192,9 @@ class AutoEnvironmentManager:
             cls.ensure_engine_dependencies(repo_path)
 
     @classmethod
-    def optimize_and_install_dependencies(cls, silent: bool = True) -> Dict[str, Any]:
+    def optimize_and_install_dependencies(cls, silent: bool = True, install_backends: bool = False) -> Dict[str, Any]:
         """
-        Khởi tạo và cài đặt toàn bộ gói còn thiếu trong môi trường một cách mượt mà.
+        Khởi tạo và cài đặt toàn bộ gói còn thiếu trong môi trường một cách mượt mà và siêu tốc.
         """
         info = cls.get_runtime_info()
         console.rule("[bold cyan]🤖 Dynamic Colab Environment Optimizer[/bold cyan]")
@@ -217,8 +217,8 @@ class AutoEnvironmentManager:
         else:
             console.print("[bold green]✓ Toàn bộ gói lõi (Prodigy, Einops, Transformers, LoRA SDK) đã sẵn sàng![/bold green]")
 
-        # 2. Clone và quét dependencies của các backend engines
-        if info["is_colab"]:
+        # 2. Clone backend engines chỉ khi được yêu cầu (Mặc định Lazy-Load khi train để Cell 1 chạy trong 2 giây)
+        if install_backends and info["is_colab"]:
             cls.ensure_backend_repositories()
 
         console.rule()
