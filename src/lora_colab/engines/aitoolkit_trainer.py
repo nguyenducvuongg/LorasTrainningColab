@@ -15,17 +15,46 @@ logger = setup_logger(__name__)
 class AIToolkitTrainer(BaseTrainer):
     """
     AI-Toolkit (Ostris) Trainer Engine.
-    Học hỏi và tối ưu hóa theo kiến trúc chuẩn SDVN & Ostris cho Flux.1 (Dev, Schnell, Kontext, Krea2-raw, Chroma).
+    Học hỏi và tối ưu hóa theo kiến trúc chuẩn SDVN & Ostris cho Flux.1 (Dev, Schnell, Kontext, Krea2-raw, Chroma) và SDXL.
     """
 
     BACKEND_REPO_URL = "https://github.com/ostris/ai-toolkit.git"
     DEFAULT_BACKEND_DIR = "/content/backends/ai-toolkit"
 
     @classmethod
+    def _patch_ai_toolkit_bugs(cls):
+        """
+        Tự động vá lỗi thiếu hasattr trên CLIPTextEncoder trong toolkit/stable_diffusion_model.py
+        để tránh văng lỗi AttributeError khi huấn luyện mô hình.
+        """
+        sd_model_file = os.path.join(cls.DEFAULT_BACKEND_DIR, "toolkit", "stable_diffusion_model.py")
+        if os.path.exists(sd_model_file):
+            try:
+                with open(sd_model_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                target_bug = "te_has_grad = self.text_encoder.text_model.final_layer_norm.weight.requires_grad"
+                if target_bug in content:
+                    fixed_code = """try:
+                    if hasattr(self.text_encoder, 'text_model') and hasattr(self.text_encoder.text_model, 'final_layer_norm'):
+                        te_has_grad = self.text_encoder.text_model.final_layer_norm.weight.requires_grad
+                    elif hasattr(self.text_encoder, 'final_layer_norm'):
+                        te_has_grad = self.text_encoder.final_layer_norm.weight.requires_grad
+                    else:
+                        te_has_grad = any(p.requires_grad for p in self.text_encoder.parameters())
+                except Exception:
+                    te_has_grad = False"""
+                    content = content.replace(target_bug, fixed_code)
+                    with open(sd_model_file, "w", encoding="utf-8") as f:
+                        f.write(content)
+            except Exception as e:
+                logger.warning(f"Could not patch ai-toolkit: {e}")
+
+    @classmethod
     def _ensure_backend_ready(cls):
         """
-        Đảm bảo kho mã nguồn Ostris AI-Toolkit đã được clone chuẩn xác (--recurse-submodules)
-        và nạp đầy đủ các phụ thuộc cần thiết chuẩn theo SDVN & Ostris.
+        Đảm bảo kho mã nguồn Ostris AI-Toolkit đã được clone chuẩn xác (--recurse-submodules),
+        vá lỗi nội bộ và nạp đầy đủ các phụ thuộc cần thiết chuẩn theo SDVN & Ostris.
         """
         # 1. Gỡ bỏ gói PyPI trùng tên nếu đã lỡ cài nhầm
         if AutoEnvironmentManager.is_package_installed("dataslots") or AutoEnvironmentManager.is_package_installed("ai_toolkit"):
@@ -53,7 +82,10 @@ class AIToolkitTrainer(BaseTrainer):
             except Exception as e:
                 logger.warning(f"Could not clone ai-toolkit: {e}")
 
-        # 3. Quét và cài đặt trọn gói các phụ thuộc cần thiết cho AI-Toolkit theo chuẩn SDVN
+        # 3. Tự động áp dụng bản vá lỗi mã nguồn nội bộ
+        cls._patch_ai_toolkit_bugs()
+
+        # 4. Quét và cài đặt trọn gói các phụ thuộc cần thiết cho AI-Toolkit theo chuẩn SDVN
         ai_toolkit_packages = [
             "oyaml>=1.0",
             "optimum-quanto>=0.2.0",
@@ -89,10 +121,11 @@ class AIToolkitTrainer(BaseTrainer):
         d_cfg = cfg.dataset
         n_cfg = cfg.network
 
-        # Nhận diện chính xác mọi biến thể của dòng Flux (Flux.1-dev, Schnell, Kontext, Krea2-raw, Chroma)
+        # Nhận diện chính xác kiến trúc mô hình (Flux, SDXL, Krea, SD 1.5)
         model_str = f"{t_cfg.model_family} {t_cfg.base_model_path}".lower()
-        is_flux = any(k in model_str for k in ["flux", "krea", "chroma", "kontext", "black-forest-labs", "schnell", "dev", "raw"])
-        quantize_base = True if (is_flux or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()) else False
+        is_flux = any(k in model_str for k in ["flux", "kontext", "black-forest-labs", "schnell", "dev", "chroma"]) and not any(k in model_str for k in ["sdxl", "pony", "sd15", "sd35"])
+        is_xl = any(k in model_str for k in ["sdxl", "pony", "illustrious", "krea"])
+        quantize_base = True if (is_flux or is_xl or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()) else False
 
         process_config: Dict[str, Any] = {
             "type": "diffusion_trainer",
@@ -145,13 +178,14 @@ class AIToolkitTrainer(BaseTrainer):
             },
             "model": {
                 "name_or_path": t_cfg.base_model_path,
-                "arch": "flux" if is_flux else "sd",
+                "arch": "flux" if is_flux else ("sdxl" if is_xl else "sd"),
                 "is_flux": is_flux,
+                "is_xl": is_xl,
                 "quantize": quantize_base,
                 "qtype": "qfloat8" if is_flux else None,
                 "quantize_te": quantize_base if is_flux else False,
                 "qtype_te": "qfloat8" if is_flux else None,
-                "low_vram": True if is_flux else False,
+                "low_vram": True if (is_flux or is_xl) else False,
             },
             "sample": {
                 "sampler": "flowmatch" if is_flux else "euler",
