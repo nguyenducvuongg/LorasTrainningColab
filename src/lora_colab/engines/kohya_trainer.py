@@ -114,20 +114,5 @@ class KohyaTrainer(BaseTrainer):
             sd_dir = os.path.dirname(os.path.abspath(script_p))
             env["PYTHONPATH"] = f"{sd_dir}:{env.get('PYTHONPATH', '')}"
 
-        try:
-            process = subprocess.Popen(
-                cmd,
-                env=env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                universal_newlines=True,
-                bufsize=1
-            )
-            for line in iter(process.stdout.readline, ''):
-                sys.stdout.write(line)
-                sys.stdout.flush()
-            process.wait()
-            return process.returncode == 0
-        except Exception as e:
-            logger.error(f"Error executing Kohya trainer: {e}")
-            return False
+        from ..core.environment import AutoEnvironmentManager
+        return AutoEnvironmentManager.execute_with_self_healing(cmd, env=env)

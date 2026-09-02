@@ -1,20 +1,21 @@
 import os
+import re
 import sys
 import subprocess
 import importlib.metadata
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Set
 from .logger import setup_logger, console
 
 logger = setup_logger(__name__)
 
 class AutoEnvironmentManager:
     """
-    Tự động nhận diện và tối ưu hóa môi trường Google Colab toàn diện:
-    - Quét phiên bản Python, PyTorch, CUDA, và GPU hiện tại của Colab.
-    - Bảo toàn PyTorch/CUDA tăng tốc gốc của Colab, tránh xung đột pip resolver.
-    - Tự động kiểm tra và cài đặt đầy đủ tất cả gói cần thiết (Prodigy, Einops, SentencePiece, LyCORIS, Transformers...).
-    - Tự động chuẩn bị các backend huấn luyện (Kohya sd-scripts, AI-Toolkit) khi cần.
-    - Thích ứng hoàn hảo khi Google nâng cấp hệ điều hành hoặc PyTorch trong tương lai.
+    Tự động nhận diện, tối ưu hóa và tự phục hồi (Self-Healing) môi trường toàn diện:
+    - Quét phiên bản Python, PyTorch, CUDA, và GPU hiện tại.
+    - Tự động quét và cài đặt các gói còn thiếu cho từng Engine (AI-Toolkit, Kohya sd-scripts, Musubi-Tuner, Captioning).
+    - Tự động phân tích file `requirements.txt` của các kho mã nguồn backend khi nâng cấp.
+    - Cơ chế Self-Healing: Bắt lỗi `ModuleNotFoundError`, tự động cài gói thiếu và chạy lại liền mạch.
+    - Thích ứng hoàn hảo khi Colab hoặc backend nâng cấp trong tương lai.
     """
 
     CORE_REQUIREMENTS = {
@@ -40,43 +41,105 @@ class AutoEnvironmentManager:
         "k-diffusion": "0.1.0",
         "open-clip-torch": "2.24.0",
         "optimum-quanto": "0.2.0",
+        "clean-fid": "0.1.35",
+        "tensorboard": "2.14.0",
         "toml": "0.10.2",
         "pillow": "10.0.0",
         "google-genai": "0.1.0",
         "openai": "1.20.0"
     }
 
-    @staticmethod
-    def is_package_installed(package_name: str) -> bool:
-        """Checks if a package is already installed in the current environment."""
-        # Handle normalized naming (e.g. lycoris-lora vs lycoris_lora)
-        norm_name = package_name.replace("-", "_")
-        alt_name = package_name.replace("_", "-")
-        for name in [package_name, norm_name, alt_name]:
+    # Packages that should never be forcefully overwritten to protect Colab PyTorch CUDA acceleration
+    PROTECTED_SYSTEM_PACKAGES = {"torch", "torchvision", "torchaudio", "setuptools", "pip"}
+
+    @classmethod
+    def is_package_installed(cls, package_name: str) -> bool:
+        """Kiểm tra một gói đã cài đặt trong môi trường Python chưa."""
+        clean_name = re.split(r"[><=~;]", package_name)[0].strip()
+        norm_name = clean_name.replace("-", "_")
+        alt_name = clean_name.replace("_", "-")
+        for name in [clean_name, norm_name, alt_name]:
             try:
                 importlib.metadata.version(name)
                 return True
-            except importlib.metadata.PackageNotFoundError:
+            except (importlib.metadata.PackageNotFoundError, Exception):
                 continue
         return False
 
-    @staticmethod
-    def get_package_version(package_name: str) -> Optional[str]:
-        """Gets the installed version of a package."""
-        norm_name = package_name.replace("-", "_")
-        alt_name = package_name.replace("_", "-")
-        for name in [package_name, norm_name, alt_name]:
+    @classmethod
+    def get_package_version(cls, package_name: str) -> Optional[str]:
+        """Lấy phiên bản hiện tại của gói."""
+        clean_name = re.split(r"[><=~;]", package_name)[0].strip()
+        norm_name = clean_name.replace("-", "_")
+        alt_name = clean_name.replace("_", "-")
+        for name in [clean_name, norm_name, alt_name]:
             try:
                 return importlib.metadata.version(name)
-            except importlib.metadata.PackageNotFoundError:
+            except (importlib.metadata.PackageNotFoundError, Exception):
                 continue
         return None
 
     @classmethod
+    def install_packages(cls, package_list: List[str], silent: bool = True) -> bool:
+        """Cài đặt danh sách gói qua pip."""
+        if not package_list:
+            return True
+        cmd = [sys.executable, "-m", "pip", "install"]
+        if silent:
+            cmd.append("-q")
+        cmd.extend(package_list)
+        try:
+            subprocess.check_call(cmd)
+            return True
+        except Exception as e:
+            logger.warning(f"Warning installing packages {package_list}: {e}")
+            return False
+
+    @classmethod
+    def install_missing_from_requirements_file(cls, req_file_path: str) -> List[str]:
+        """
+        Tự động quét file requirements.txt của backend (ai-toolkit, sd-scripts, musubi-tuner),
+        phát hiện các gói chưa có và tự động cài đặt.
+        """
+        if not os.path.exists(req_file_path):
+            return []
+
+        missing = []
+        try:
+            with open(req_file_path, "r", encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if not line or line.startswith(("#", "-r", "--", "git+", "http")):
+                        continue
+                    pkg_spec = line.split(";")[0].strip()
+                    pkg_name = re.split(r"[><=~]", pkg_spec)[0].strip()
+                    if not pkg_name or pkg_name.lower() in cls.PROTECTED_SYSTEM_PACKAGES:
+                        continue
+                    if not cls.is_package_installed(pkg_name):
+                        missing.append(pkg_spec)
+
+            if missing:
+                console.print(f"[bold yellow]📦 Tự động phát hiện & cài đặt {len(missing)} gói cần thiết từ {os.path.basename(req_file_path)}:[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
+                cls.install_packages(missing)
+                console.print(f"[bold green]✓ Cập nhật gói từ {os.path.basename(req_file_path)} hoàn tất![/bold green]")
+        except Exception as e:
+            logger.warning(f"Could not parse requirements file {req_file_path}: {e}")
+
+        return missing
+
+    @classmethod
+    def ensure_engine_dependencies(cls, backend_dir: str):
+        """Đảm bảo các gói của engine backend đã sẵn sàng trước khi chạy."""
+        if not os.path.exists(backend_dir):
+            return
+        req_file = os.path.join(backend_dir, "requirements.txt")
+        if os.path.exists(req_file):
+            cls.install_missing_from_requirements_file(req_file)
+
+    @classmethod
     def get_runtime_info(cls) -> Dict[str, Any]:
-        """Detects live runtime environment details."""
+        """Thu thập thông tin chi tiết về môi trường Runtime."""
         py_ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        
         torch_ver = "Not Installed"
         cuda_ver = "N/A"
         gpu_name = "N/A"
@@ -103,69 +166,58 @@ class AutoEnvironmentManager:
 
     @classmethod
     def ensure_backend_repositories(cls, backends_dir: str = "/content/backends"):
-        """Ensures Kohya sd-scripts and AI-Toolkit are cloned and available."""
+        """Ensures Kohya sd-scripts, AI-Toolkit and Musubi-Tuner are cloned and ready."""
         if not os.path.exists("/content"):
-            return  # Not in Colab environment
+            return
 
         os.makedirs(backends_dir, exist_ok=True)
 
-        # 1. Kohya sd-scripts
-        kohya_path = os.path.join(backends_dir, "sd-scripts")
-        if not os.path.exists(kohya_path):
-            console.print("[cyan]📥 Chuẩn bị backend Kohya sd-scripts...[/cyan]")
-            try:
-                subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/kohya-ss/sd-scripts.git", kohya_path])
-                console.print("[green]✓ Kohya sd-scripts đã sẵn sàng![/green]")
-            except Exception as e:
-                logger.warning(f"Could not clone sd-scripts: {e}")
+        backends = [
+            ("sd-scripts", "https://github.com/kohya-ss/sd-scripts.git"),
+            ("ai-toolkit", "https://github.com/ostris/ai-toolkit.git"),
+            ("musubi-tuner", "https://github.com/kohya-ss/musubi-tuner.git"),
+        ]
 
-        # 2. AI-Toolkit
-        aitoolkit_path = os.path.join(backends_dir, "ai-toolkit")
-        if not os.path.exists(aitoolkit_path):
-            console.print("[cyan]📥 Chuẩn bị backend AI-Toolkit cho Flux.1...[/cyan]")
-            try:
-                subprocess.check_call(["git", "clone", "--depth", "1", "https://github.com/ostris/ai-toolkit.git", aitoolkit_path])
-                console.print("[green]✓ AI-Toolkit đã sẵn sàng![/green]")
-            except Exception as e:
-                logger.warning(f"Could not clone ai-toolkit: {e}")
+        for name, repo_url in backends:
+            repo_path = os.path.join(backends_dir, name)
+            if not os.path.exists(repo_path):
+                console.print(f"[cyan]📥 Tải và chuẩn bị backend [bold]{name}[/bold]...[/cyan]")
+                try:
+                    subprocess.check_call(["git", "clone", "--depth", "1", repo_url, repo_path])
+                    console.print(f"[green]✓ Backend {name} đã sẵn sàng![/green]")
+                except Exception as e:
+                    logger.warning(f"Could not clone {name}: {e}")
+            
+            # Tự động quét requirements.txt của backend đó
+            cls.ensure_engine_dependencies(repo_path)
 
     @classmethod
     def optimize_and_install_dependencies(cls, silent: bool = True) -> Dict[str, Any]:
         """
-        Dynamically installs only missing packages, avoiding breaking upgrades to setuptools or PyTorch.
+        Khởi tạo và cài đặt toàn bộ gói còn thiếu trong môi trường một cách mượt mà.
         """
         info = cls.get_runtime_info()
         console.rule("[bold cyan]🤖 Dynamic Colab Environment Optimizer[/bold cyan]")
         console.print(f"[bold green]Python Runtime:[/bold green] {info['python_version']} | [bold green]PyTorch:[/bold green] {info['torch_version']}")
         console.print(f"[bold green]CUDA Build:[/bold green] {info['cuda_version']} | [bold green]GPU Hardware:[/bold green] {info['gpu_name']}")
 
-        # 1. Resolve missing packages
+        # 1. Quét các gói lõi còn thiếu
         missing_pkgs = []
         for pkg, min_ver in cls.CORE_REQUIREMENTS.items():
             if not cls.is_package_installed(pkg):
                 missing_pkgs.append(f"{pkg}>={min_ver}")
 
-        # Check jedi for ipython
         if not cls.is_package_installed("jedi"):
             missing_pkgs.append("jedi>=0.16")
 
         if missing_pkgs:
             console.print(f"[bold yellow]📦 Tự động cài bổ sung {len(missing_pkgs)} gói tối ưu:[/bold yellow] [dim]{', '.join(missing_pkgs)}[/dim]")
-            install_cmd = [sys.executable, "-m", "pip", "install"]
-            if silent:
-                install_cmd.append("-q")
-            install_cmd.extend(missing_pkgs)
-
-            try:
-                subprocess.check_call(install_cmd)
-                console.print("[bold green]✓ Cài đặt dependencies hoàn tất mượt mà không xung đột![/bold green]")
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Error installing dependencies: {e}")
-                raise e
+            cls.install_packages(missing_pkgs, silent=silent)
+            console.print("[bold green]✓ Cài đặt dependencies hoàn tất mượt mà không xung đột![/bold green]")
         else:
             console.print("[bold green]✓ Toàn bộ gói lõi (Prodigy, Einops, Transformers, LoRA SDK) đã sẵn sàng![/bold green]")
 
-        # 2. Clone backend engines if running in Colab
+        # 2. Clone và quét dependencies của các backend engines
         if info["is_colab"]:
             cls.ensure_backend_repositories()
 
@@ -175,3 +227,56 @@ class AutoEnvironmentManager:
             "installed_count": len(missing_pkgs),
             "runtime_info": info
         }
+
+    @classmethod
+    def execute_with_self_healing(
+        cls,
+        cmd: List[str],
+        env: Optional[Dict[str, str]] = None,
+        cwd: Optional[str] = None,
+        max_retries: int = 2
+    ) -> bool:
+        """
+        Thực thi tiến trình với cơ chế tự sửa lỗi (Self-Healing):
+        Nếu phát hiện ModuleNotFoundError trong log, tự động bắt tên module, cài đặt qua pip và chạy lại!
+        """
+        for attempt in range(max_retries + 1):
+            process = subprocess.Popen(
+                cmd,
+                env=env,
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True,
+                bufsize=1
+            )
+
+            output_lines = []
+            missing_module = None
+
+            for line in iter(process.stdout.readline, ''):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                output_lines.append(line)
+
+                # Bắt lỗi ModuleNotFoundError: No module named 'xyz'
+                if "ModuleNotFoundError" in line and "No module named" in line:
+                    match = re.search(r"No module named ['\"]([^'\"]+)['\"]", line)
+                    if match:
+                        missing_module = match.group(1).split(".")[0]
+
+            process.wait()
+
+            if process.returncode == 0:
+                return True
+
+            # Nếu có lỗi thiếu module và còn lượt thử lại -> Auto-Heal
+            if missing_module and attempt < max_retries:
+                console.print(f"\n[bold yellow]🛠️ Tự động phát hiện thiếu module: [red]{missing_module}[/red] -> Tiến hành tự động cài đặt và chạy lại...[/bold yellow]")
+                cls.install_packages([missing_module], silent=False)
+                console.print(f"[bold green]✓ Đã cài đặt {missing_module}. Đang khởi động lại tiến trình ({attempt + 1}/{max_retries})...[/bold green]\n")
+                continue
+            else:
+                return False
+
+        return False
