@@ -8,7 +8,10 @@ from ..core.logger import setup_logger, console
 
 logger = setup_logger(__name__)
 
-SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jfif", ".tiff"}
+SUPPORTED_IMAGE_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".jfif", ".tiff",
+    ".heic", ".heif", ".avif", ".png_large", ".jpg_large"
+}
 
 class DatasetNormalizer:
     """
@@ -16,6 +19,8 @@ class DatasetNormalizer:
     - Auto-renames files to standard format {prefix}_{index:04d}.{ext} (optional, default: True)
     - Converts corrupted/non-RGB modes (RGBA, P, CMYK) to clean standard RGB
     - Synchronizes matching .txt caption files
+    - Auto-extracts .zip archives placed in the dataset folder
+    - Deeply scans recursive subdirectories to locate images automatically
     - Uses local /tmp staging to prevent Google Drive FUSE [Errno 107] Transport endpoint disconnects
     """
 
@@ -47,33 +52,60 @@ class DatasetNormalizer:
     @classmethod
     def resolve_dataset_dir(cls, base_dir: str) -> str:
         """
-        If base_dir contains direct images, returns base_dir.
-        If base_dir has no direct images but contains subdirectories with images (e.g. 02_character/Mai_girl),
-        returns the subfolder containing the images.
+        Tự động phát hiện và định vị thư mục chứa ảnh:
+        1. Tự động giải nén nếu có file zip/tar trong thư mục.
+        2. Kiểm tra ảnh trực tiếp tại base_dir.
+        3. Quét đệ quy sâu (Deep Recursive Scan) toàn bộ cây thư mục con để tìm thư mục chứa nhiều ảnh nhất.
         """
         if not os.path.exists(base_dir):
             return base_dir
-            
-        direct_images = [
-            f for f in os.listdir(base_dir)
-            if os.path.isfile(os.path.join(base_dir, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
-        ]
-        if direct_images:
-            return base_dir
-            
-        subdirs = [
-            os.path.join(base_dir, d) for d in sorted(os.listdir(base_dir))
-            if os.path.isdir(os.path.join(base_dir, d)) and not d.startswith((".", "_"))
-        ]
-        for sub in subdirs:
-            sub_images = [
-                f for f in os.listdir(sub)
-                if os.path.isfile(os.path.join(sub, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+
+        # 1. Tự động giải nén file zip nếu có
+        try:
+            import zipfile
+            for item in os.listdir(base_dir):
+                if item.lower().endswith(".zip") and os.path.isfile(os.path.join(base_dir, item)):
+                    zip_p = os.path.join(base_dir, item)
+                    console.print(f"[bold cyan]📦 Phát hiện file zip: [yellow]{item}[/yellow] -> Tự động giải nén...[/bold cyan]")
+                    try:
+                        with zipfile.ZipFile(zip_p, "r") as z_ref:
+                            z_ref.extractall(base_dir)
+                        console.print(f"[bold green]✓ Giải nén {item} thành công![/bold green]")
+                    except Exception as z_err:
+                        logger.warning(f"Lỗi giải nén {item}: {z_err}")
+        except Exception:
+            pass
+
+        # 2. Kiểm tra ảnh trực tiếp tại base_dir
+        try:
+            direct_images = [
+                f for f in os.listdir(base_dir)
+                if os.path.isfile(os.path.join(base_dir, f)) and os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
             ]
-            if sub_images:
-                console.print(f"[cyan]📁 Tự động phát hiện ảnh trong thư mục con: [bold]{sub}[/bold] ({len(sub_images)} ảnh)[/cyan]")
-                return sub
-                
+            if direct_images:
+                return base_dir
+        except Exception:
+            pass
+
+        # 3. Quét đệ quy sâu (Deep Recursive Scan) toàn bộ cây thư mục con
+        best_dir = base_dir
+        max_img_count = 0
+
+        for root, dirs, files in os.walk(base_dir):
+            # Bỏ qua thư mục ẩn hoặc checkpoints
+            dirs[:] = [d for d in dirs if not d.startswith((".", "_")) and d not in ("outputs", "models", ".cache")]
+            img_count = len([
+                f for f in files
+                if os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+            ])
+            if img_count > max_img_count:
+                max_img_count = img_count
+                best_dir = root
+
+        if max_img_count > 0 and best_dir != base_dir:
+            console.print(f"[bold cyan]📁 Tự động phát hiện {max_img_count} ảnh trong thư mục con:[/bold cyan] [bold yellow]{best_dir}[/bold yellow]")
+            return best_dir
+
         return base_dir
 
     @classmethod
