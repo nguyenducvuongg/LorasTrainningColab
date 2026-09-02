@@ -144,7 +144,7 @@ class AIToolkitTrainer(BaseTrainer):
             "tensorboard>=2.14.0",
             "toml>=0.10.2",
             "bitsandbytes>=0.43.0",
-            "python-dotenv>=1.0.0"
+            "python-dotenv>=1.0.0",
         ]
         missing = [
             pkg for pkg in ai_toolkit_packages
@@ -158,17 +158,60 @@ class AIToolkitTrainer(BaseTrainer):
         if os.path.exists(cls.DEFAULT_BACKEND_DIR):
             AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_BACKEND_DIR)
 
+    def _detect_model_arch(self) -> Tuple[bool, bool, bool]:
+        """
+        Nhận diện chính xác kiến trúc mô hình từ model_family (không dùng base_model_path để tránh false match).
+        Returns: (is_flux, is_xl, is_sd15)
+        """
+        fam = self.config.training.model_family.lower()
+        is_flux = any(k in fam for k in ["flux", "kontext", "schnell", "chroma"])
+        # Krea là SDXL-based
+        is_xl = any(k in fam for k in ["sdxl", "pony", "illustrious", "krea"])
+        is_sd15 = any(k in fam for k in ["sd15", "sd1.5", "stable-diffusion-v1"])
+        return is_flux, is_xl, is_sd15
+
+    def _calc_total_steps(self) -> int:
+        """Tính tổng số steps dựa trên epochs, dataset size và repeats."""
+        t_cfg = self.config.training
+        d_cfg = self.config.dataset
+        if t_cfg.max_train_steps:
+            return t_cfg.max_train_steps
+        # Ước tính: nếu không biết dataset size, dùng giá trị mặc định an toàn
+        # Dataset size thực tế sẽ được engine tự xử lý
+        approx_images = 20  # ước tính tối thiểu
+        try:
+            if os.path.exists(d_cfg.dataset_dir):
+                img_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+                approx_images = max(1, len([
+                    f for f in os.listdir(d_cfg.dataset_dir)
+                    if os.path.splitext(f)[-1].lower() in img_exts
+                ]))
+        except Exception:
+            pass
+        steps = (approx_images * d_cfg.repeats * t_cfg.epochs) // max(1, t_cfg.batch_size)
+        return max(steps, 100)
+
     def build_command_or_config(self) -> Dict[str, Any]:
         cfg = self.config
         t_cfg = cfg.training
         d_cfg = cfg.dataset
         n_cfg = cfg.network
 
-        # Nhận diện chính xác kiến trúc mô hình (Flux, SDXL, Krea, SD 1.5)
-        model_str = f"{t_cfg.model_family} {t_cfg.base_model_path}".lower()
-        is_flux = any(k in model_str for k in ["flux", "kontext", "black-forest-labs", "schnell", "dev", "chroma"]) and not any(k in model_str for k in ["sdxl", "pony", "sd15", "sd35"])
-        is_xl = any(k in model_str for k in ["sdxl", "pony", "illustrious", "krea"])
-        quantize_base = True if (is_flux or is_xl or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()) else False
+        is_flux, is_xl, is_sd15 = self._detect_model_arch()
+        quantize_base = is_flux or is_xl or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()
+
+        total_steps = self._calc_total_steps()
+
+        # Optimizer mapping: Prodigy → prodigy, AdamW8bit → adamw8bit, AdamW → adamw
+        opt_lower = t_cfg.optimizer_type.lower()
+        if "prodigy" in opt_lower:
+            ai_optimizer = "prodigy"
+        elif "adamw8bit" in opt_lower or "8bit" in opt_lower:
+            ai_optimizer = "adamw8bit"
+        elif "adafactor" in opt_lower:
+            ai_optimizer = "adafactor"
+        else:
+            ai_optimizer = "adamw"
 
         process_config: Dict[str, Any] = {
             "type": "diffusion_trainer",
@@ -184,7 +227,7 @@ class AIToolkitTrainer(BaseTrainer):
                 "dtype": "bfloat16" if t_cfg.mixed_precision == "bf16" else "float16",
                 "save_every": t_cfg.save_every_n_steps or 250,
                 "max_step_saves_to_keep": 4,
-                "save_format": "diffusers",
+                "save_format": "safetensors",   # FIX: đổi từ "diffusers" → "safetensors"
                 "push_to_hub": False,
             },
             "datasets": [
@@ -195,26 +238,26 @@ class AIToolkitTrainer(BaseTrainer):
                     "shuffle_tokens": d_cfg.shuffle_caption,
                     "cache_latents_to_disk": t_cfg.cache_latents_to_disk,
                     "resolution": [512, 768, 1024] if d_cfg.enable_bucketing else [d_cfg.resolution],
-                    "num_repeats": d_cfg.repeats if hasattr(d_cfg, "repeats") else 1,
+                    "num_repeats": d_cfg.repeats,
                 }
             ],
             "train": {
                 "batch_size": t_cfg.batch_size,
-                "steps": t_cfg.max_train_steps or (t_cfg.epochs * 200),
+                "steps": total_steps,
                 "gradient_accumulation": t_cfg.gradient_accumulation_steps,
                 "gradient_accumulation_steps": t_cfg.gradient_accumulation_steps,
                 "train_unet": True,
                 "train_text_encoder": False,  # Keeps VRAM stable on T4/L4
                 "gradient_checkpointing": t_cfg.gradient_checkpointing,
                 "noise_scheduler": "flowmatch" if is_flux else "ddim",
-                "optimizer": "adamw8bit" if "8bit" in t_cfg.optimizer_type.lower() else "adamw",
+                "optimizer": ai_optimizer,
                 "timestep_type": "shift" if is_flux else "linear",
-                "content_or_style": "balanced" if is_flux else "balanced",
+                "content_or_style": "balanced",
                 "lr": t_cfg.learning_rate,
                 "lr_scheduler": t_cfg.lr_scheduler or "constant",
                 "ema_config": {
                     "use_ema": True,
-                    "ema_decay": 0.99
+                    "ema_decay": 0.99,
                 },
                 "dtype": "bfloat16" if t_cfg.mixed_precision == "bf16" else "float16",
                 "loss_type": "mse",
@@ -283,6 +326,7 @@ class AIToolkitTrainer(BaseTrainer):
         # 1. Đảm bảo backend Ostris/ai-toolkit đã sẵn sàng
         self._ensure_backend_ready()
 
+        is_flux, is_xl, is_sd15 = self._detect_model_arch()
         config_dict = self.build_command_or_config()
         temp_config_path = os.path.join(self.config.training.checkpoint_dir, "ai_toolkit_active_config.yaml")
         os.makedirs(os.path.dirname(temp_config_path), exist_ok=True)
@@ -290,9 +334,11 @@ class AIToolkitTrainer(BaseTrainer):
         with open(temp_config_path, "w", encoding="utf-8") as f:
             yaml.dump(config_dict, f, default_flow_style=False)
 
-        console.print(f"[bold green]🚀 Khởi chạy AI-Toolkit Trainer cho {self.config.training.model_family}...[/bold green]")
+        arch_label = "Flux.1" if is_flux else ("SDXL/Krea" if is_xl else "SD 1.5")
+        console.print(f"[bold green]🚀 Khởi chạy AI-Toolkit Trainer ({arch_label}) cho {self.config.training.model_family}...[/bold green]")
         console.print(f"  • Cấu hình: [cyan]{temp_config_path}[/cyan]")
         console.print(f"  • Lưu checkpoint trực tiếp tại: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
+        console.print(f"  • Optimizer: [green]{self.config.training.optimizer_type}[/green] | LR: [green]{self.config.training.learning_rate}[/green]")
 
         cmd, ai_dir = self._resolve_run_cmd(temp_config_path)
         env = os.environ.copy()
@@ -300,7 +346,7 @@ class AIToolkitTrainer(BaseTrainer):
             env["PYTHONPATH"] = f"{ai_dir}:{env.get('PYTHONPATH', '')}"
 
         # 2. Khởi tạo Live Dashboard gọn gàng trong 1 viewheight
-        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
+        total_steps = self._calc_total_steps()
         dashboard = LiveTrainingDashboard(
             model_name=self.config.training.model_family,
             engine_name="AI-Toolkit (Ostris)",

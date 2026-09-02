@@ -26,7 +26,10 @@ class KohyaTrainer(BaseTrainer):
             console.print("[bold cyan]📥 Tải và cấu hình backend chính thức [bold]Kohya sd-scripts[/bold]...[/bold cyan]")
             try:
                 os.makedirs(os.path.dirname(cls.DEFAULT_BACKEND_DIR), exist_ok=True)
-                subprocess.check_call(["git", "clone", "--depth", "1", cls.BACKEND_REPO_URL, cls.DEFAULT_BACKEND_DIR])
+                subprocess.check_call([
+                    "git", "clone", "--depth", "1", "--recurse-submodules",
+                    cls.BACKEND_REPO_URL, cls.DEFAULT_BACKEND_DIR
+                ])
                 console.print("[bold green]✓ Kohya sd-scripts đã sẵn sàng![/bold green]")
             except Exception as e:
                 logger.warning(f"Could not clone sd-scripts: {e}")
@@ -40,7 +43,9 @@ class KohyaTrainer(BaseTrainer):
             "open-clip-torch>=2.24.0",
             "dadaptation>=3.1",
             "prodigyopt>=1.0",
-            "lycoris-lora>=2.2.0"
+            "lycoris-lora>=2.2.0",
+            "tensorboard>=2.14.0",
+            "huggingface-hub>=0.23.0",
         ]
         missing = [
             pkg for pkg in kohya_packages
@@ -100,22 +105,30 @@ class KohyaTrainer(BaseTrainer):
             f"--mixed_precision={t_cfg.mixed_precision}",
             f"--save_precision={'bf16' if t_cfg.mixed_precision == 'bf16' else 'fp16'}",
             f"--caption_extension={d_cfg.caption_extension}",
+            f"--logging_dir={t_cfg.logging_dir}",
         ]
 
+        # Bucket resolution: dùng field chuẩn min_bucket_res/max_bucket_res từ DatasetConfig
         if d_cfg.enable_bucketing:
             cmd.extend([
                 "--enable_bucket",
-                f"--min_bucket_reso={d_cfg.min_bucket_resolution}",
-                f"--max_bucket_reso={d_cfg.max_bucket_resolution}"
+                f"--min_bucket_reso={d_cfg.min_bucket_res}",
+                f"--max_bucket_reso={d_cfg.max_bucket_res}",
             ])
 
         if t_cfg.gradient_checkpointing:
             cmd.append("--gradient_checkpointing")
 
+        if t_cfg.gradient_accumulation_steps > 1:
+            cmd.append(f"--gradient_accumulation_steps={t_cfg.gradient_accumulation_steps}")
+
         if t_cfg.cache_latents_to_disk:
             cmd.append("--cache_latents_to_disk")
+        elif t_cfg.cache_latents:
+            cmd.append("--cache_latents")
 
-        if t_cfg.cache_text_encoder_outputs:
+        # cache_text_encoder_outputs (an toàn: dùng getattr)
+        if getattr(t_cfg, "cache_text_encoder_outputs", False):
             cmd.append("--cache_text_encoder_outputs")
 
         if d_cfg.shuffle_caption:
@@ -124,23 +137,47 @@ class KohyaTrainer(BaseTrainer):
         if t_cfg.sample_every_n_steps and t_cfg.sample_prompt:
             cmd.extend([
                 f"--sample_every_n_steps={t_cfg.sample_every_n_steps}",
-                f"--sample_prompts={t_cfg.sample_prompt}"
+                f"--sample_prompts={t_cfg.sample_prompt}",
+                "--sample_sampler=euler_a",
             ])
+
+        # Noise offset
+        if getattr(t_cfg, "noise_offset", 0.0) > 0:
+            cmd.append(f"--noise_offset={t_cfg.noise_offset}")
+
+        # Min SNR Gamma
+        if getattr(t_cfg, "min_snr_gamma", None):
+            cmd.append(f"--min_snr_gamma={t_cfg.min_snr_gamma}")
+
+        # Continue from existing LoRA weights
+        if getattr(t_cfg, "network_weights", None) and os.path.exists(t_cfg.network_weights):
+            cmd.append(f"--network_weights={t_cfg.network_weights}")
 
         # Optimizer selection
         opt = t_cfg.optimizer_type.lower()
         if "prodigy" in opt:
             cmd.extend([
                 "--optimizer_type=Prodigy",
-                "--optimizer_args", "decouple=True", "weight_decay=0.01", "d_coef=1.0", "use_bias_correction=True", "safeguard_warmup=True"
+                "--optimizer_args",
+                "decouple=True",
+                "weight_decay=0.01",
+                "d_coef=1.0",
+                "use_bias_correction=True",
+                "safeguard_warmup=True",
             ])
+            # Prodigy requires LR = 1.0 and cosine scheduler
+            cmd.append("--lr_scheduler=cosine")
         elif "dadaptation" in opt or "dadapt" in opt:
             cmd.extend([
                 "--optimizer_type=DAdaptAdamPreprint",
-                "--optimizer_args", "decouple=True", "weight_decay=0.01"
+                "--optimizer_args",
+                "decouple=True",
+                "weight_decay=0.01",
             ])
         elif "adamw8bit" in opt or "8bit" in opt:
             cmd.extend(["--optimizer_type=AdamW8bit"])
+        elif "adafactor" in opt:
+            cmd.extend(["--optimizer_type=Adafactor", "--scale_lr"])
         elif "lion" in opt:
             cmd.extend(["--optimizer_type=Lion"])
         else:
@@ -150,7 +187,7 @@ class KohyaTrainer(BaseTrainer):
         if resume_from and os.path.exists(resume_from):
             cmd.append(f"--resume={resume_from}")
 
-        # Text encoder training
+        # Text encoder training (chỉ khi không cache latents)
         if t_cfg.text_encoder_lr and not t_cfg.cache_latents_to_disk:
             cmd.append(f"--text_encoder_lr={t_cfg.text_encoder_lr}")
 
@@ -158,9 +195,9 @@ class KohyaTrainer(BaseTrainer):
 
     def _determine_script_name(self) -> str:
         fam = self.config.training.model_family.lower()
-        if "sdxl" in fam or "pony" in fam or "illustrious" in fam:
+        if any(k in fam for k in ["sdxl", "pony", "illustrious"]):
             return "sdxl_train_network.py"
-        elif "sd3" in fam:
+        elif any(k in fam for k in ["sd35", "sd3.5", "sd3"]):
             return "sd3_train_network.py"
         elif "flux" in fam:
             return "flux_train_network.py"
@@ -172,8 +209,10 @@ class KohyaTrainer(BaseTrainer):
         
         console.print(f"[bold green]🚀 Khởi chạy Kohya Trainer cho {self.config.training.model_family}...[/bold green]")
         console.print(f"  • Base Model: [cyan]{self.config.training.base_model_path}[/cyan]")
+        console.print(f"  • Dataset: [cyan]{self.config.dataset.dataset_dir}[/cyan]")
         console.print(f"  • Lưu checkpoint trực tiếp tại: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
-        console.print(f"  • Command: [dim]{' '.join(cmd)}[/dim]")
+        console.print(f"  • Optimizer: [green]{self.config.training.optimizer_type}[/green] | LR: [green]{self.config.training.learning_rate}[/green]")
+        console.print(f"  • Command: [dim]{' '.join(cmd[:8])}...[/dim]")
 
         env = os.environ.copy()
         script_p = self._resolve_script_path()
