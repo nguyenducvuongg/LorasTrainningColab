@@ -24,9 +24,10 @@ class AIToolkitTrainer(BaseTrainer):
     @classmethod
     def _patch_ai_toolkit_bugs(cls):
         """
-        Tự động vá lỗi thiếu hasattr trên CLIPTextEncoder trong toolkit/stable_diffusion_model.py
-        để tránh văng lỗi AttributeError khi huấn luyện mô hình.
+        Tự động vá lỗi thiếu hasattr trên CLIPTextEncoder và lỗi prompt_embeds.hidden_states NoneType
+        trong mã nguồn AI-Toolkit (toolkit/stable_diffusion_model.py & toolkit/train_tools.py).
         """
+        # 1. Vá lỗi stable_diffusion_model.py
         sd_model_file = os.path.join(cls.DEFAULT_BACKEND_DIR, "toolkit", "stable_diffusion_model.py")
         if os.path.exists(sd_model_file):
             try:
@@ -48,7 +49,49 @@ class AIToolkitTrainer(BaseTrainer):
                     with open(sd_model_file, "w", encoding="utf-8") as f:
                         f.write(content)
             except Exception as e:
-                logger.warning(f"Could not patch ai-toolkit: {e}")
+                logger.warning(f"Could not patch stable_diffusion_model.py: {e}")
+
+        # 2. Vá lỗi train_tools.py (TypeError: 'NoneType' object is not subscriptable khi hidden_states is None)
+        train_tools_file = os.path.join(cls.DEFAULT_BACKEND_DIR, "toolkit", "train_tools.py")
+        if os.path.exists(train_tools_file):
+            try:
+                with open(train_tools_file, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                old_code_1 = "prompt_embeds = prompt_embeds.hidden_states[-2]  # always penultimate layer"
+                new_code_1 = """if hasattr(prompt_embeds, 'hidden_states') and prompt_embeds.hidden_states is not None:
+            prompt_embeds = prompt_embeds.hidden_states[-2]
+        elif isinstance(prompt_embeds, (tuple, list)) and len(prompt_embeds) > 2 and prompt_embeds[2] is not None:
+            prompt_embeds = prompt_embeds[2][-2]
+        elif hasattr(prompt_embeds, 'last_hidden_state') and prompt_embeds.last_hidden_state is not None:
+            prompt_embeds = prompt_embeds.last_hidden_state
+        else:
+            prompt_embeds = prompt_embeds[0]"""
+
+                old_code_2 = "prompt_embed = embeds.hidden_states[-2]  # always penultimate layer"
+                new_code_2 = """if hasattr(embeds, 'hidden_states') and embeds.hidden_states is not None:
+                prompt_embed = embeds.hidden_states[-2]
+            elif isinstance(embeds, (tuple, list)) and len(embeds) > 2 and embeds[2] is not None:
+                prompt_embed = embeds[2][-2]
+            elif hasattr(embeds, 'last_hidden_state') and embeds.last_hidden_state is not None:
+                prompt_embed = embeds.last_hidden_state
+            else:
+                prompt_embed = embeds[0]"""
+
+                if old_code_1 in content:
+                    content = content.replace(old_code_1, new_code_1)
+                elif "prompt_embeds = prompt_embeds.hidden_states[-2]" in content:
+                    content = content.replace("prompt_embeds = prompt_embeds.hidden_states[-2]", new_code_1)
+
+                if old_code_2 in content:
+                    content = content.replace(old_code_2, new_code_2)
+                elif "prompt_embed = embeds.hidden_states[-2]" in content:
+                    content = content.replace("prompt_embed = embeds.hidden_states[-2]", new_code_2)
+
+                with open(train_tools_file, "w", encoding="utf-8") as f:
+                    f.write(content)
+            except Exception as e:
+                logger.warning(f"Could not patch train_tools.py: {e}")
 
     @classmethod
     def _ensure_backend_ready(cls):
