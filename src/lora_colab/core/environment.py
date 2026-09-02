@@ -71,17 +71,49 @@ class AutoEnvironmentManager:
                 continue
         return None
 
+    DRIVE_WHEEL_DIR = "/content/drive/MyDrive/Colab_LoRA_Studio/.cache/pip_wheels"
+    DRIVE_PIP_CACHE_DIR = "/content/drive/MyDrive/Colab_LoRA_Studio/.cache/pip_cache"
+
     @classmethod
     def install_packages(cls, package_list: List[str], silent: bool = True) -> bool:
-        """Cài đặt danh sách gói qua pip siêu tốc với cờ --prefer-binary."""
+        """
+        Cài đặt danh sách gói qua pip siêu tốc với cờ --prefer-binary kết hợp bộ nhớ đệm
+        Google Drive Persistent Pip Wheels Cache (Lần 1 tải về, lần 2 nạp tức thì trong 1s).
+        """
         if not package_list:
             return True
+
+        has_drive = os.path.exists("/content/drive/MyDrive")
         cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--no-warn-script-location"]
+
+        # Nếu đã mount Google Drive, sử dụng thư mục .cache/pip_wheels trên Drive
+        if has_drive:
+            os.makedirs(cls.DRIVE_WHEEL_DIR, exist_ok=True)
+            os.makedirs(cls.DRIVE_PIP_CACHE_DIR, exist_ok=True)
+            cmd.extend([
+                "--find-links", cls.DRIVE_WHEEL_DIR,
+                "--cache-dir", cls.DRIVE_PIP_CACHE_DIR
+            ])
+
         if silent:
             cmd.append("-q")
         cmd.extend(package_list)
+
         try:
             subprocess.check_call(cmd)
+
+            # Tự động lưu file .whl vào Google Drive để các phiên sau nạp ngay trong 1 giây không cần tải mạng
+            if has_drive:
+                try:
+                    download_cmd = [
+                        sys.executable, "-m", "pip", "download",
+                        "--prefer-binary", "--no-deps",
+                        "-d", cls.DRIVE_WHEEL_DIR, "-q"
+                    ] + package_list
+                    subprocess.run(download_cmd, check=False)
+                except Exception:
+                    pass
+
             return True
         except Exception as e:
             logger.warning(f"Warning installing packages {package_list}: {e}")

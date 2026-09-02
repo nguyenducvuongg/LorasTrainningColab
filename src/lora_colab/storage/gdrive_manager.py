@@ -40,7 +40,10 @@ class GDriveWorkspaceManager:
         "outputs/final_loras",
         "outputs/logs",
         # Configs
-        "configs"
+        "configs",
+        # Persistent Cache (Lưu file .whl để nạp tức thì trong 1 giây)
+        ".cache/pip_wheels",
+        ".cache/pip_cache"
     ]
 
     @classmethod
