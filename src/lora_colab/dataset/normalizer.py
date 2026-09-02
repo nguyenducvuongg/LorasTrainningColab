@@ -91,20 +91,64 @@ class DatasetNormalizer:
         best_dir = base_dir
         max_img_count = 0
 
-        for root, dirs, files in os.walk(base_dir):
-            # Bỏ qua thư mục ẩn hoặc checkpoints
-            dirs[:] = [d for d in dirs if not d.startswith((".", "_")) and d not in ("outputs", "models", ".cache")]
-            img_count = len([
-                f for f in files
-                if os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
-            ])
-            if img_count > max_img_count:
-                max_img_count = img_count
-                best_dir = root
+        if os.path.exists(base_dir):
+            for root, dirs, files in os.walk(base_dir):
+                dirs[:] = [d for d in dirs if not d.startswith((".", "_")) and d not in ("outputs", "models", ".cache")]
+                img_count = len([
+                    f for f in files
+                    if os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+                ])
+                if img_count > max_img_count:
+                    max_img_count = img_count
+                    best_dir = root
 
         if max_img_count > 0 and best_dir != base_dir:
             console.print(f"[bold cyan]📁 Tự động phát hiện {max_img_count} ảnh trong thư mục con:[/bold cyan] [bold yellow]{best_dir}[/bold yellow]")
             return best_dir
+
+        # 4. NẾU VẪN 0 ẢNH: Tự động quét toàn bộ Google Drive (/content/drive/MyDrive)
+        # để tìm thư mục dataset thực tế (ví dụ: MyDrive/datasets/02_character, MyDrive/Colab_Lora_Studio,...)
+        drive_root = "/content/drive/MyDrive"
+        if os.path.exists(drive_root) and max_img_count == 0:
+            target_keyword = os.path.basename(base_dir).lower().strip()  # vd: "02_character"
+            pure_name = target_keyword.split("_")[-1]  # vd: "character", "face", "style"
+            console.print(f"[bold cyan]🔍 Đang tự động quét toàn bộ Google Drive để tìm thư mục '[yellow]{target_keyword}[/yellow]' chứa ảnh thực tế...[/bold cyan]")
+
+            drive_matches = []
+            for root, dirs, files in os.walk(drive_root):
+                rel_depth = root[len(drive_root):].count(os.sep)
+                if rel_depth > 5:
+                    dirs[:] = []
+                    continue
+                dirs[:] = [d for d in dirs if not d.startswith((".", "_")) and d not in ("outputs", "models", ".cache", "trash", "checkpoints")]
+
+                root_lower = root.lower()
+                root_base = os.path.basename(root).lower()
+                img_cnt = len([
+                    f for f in files
+                    if os.path.splitext(f)[-1].lower() in SUPPORTED_IMAGE_EXTENSIONS
+                ])
+
+                if img_cnt > 0:
+                    score = 0
+                    if target_keyword == root_base:
+                        score += 50
+                    elif target_keyword in root_base:
+                        score += 30
+                    elif pure_name in root_base:
+                        score += 20
+                    elif "dataset" in root_lower and pure_name in root_lower:
+                        score += 15
+                    elif "dataset" in root_lower:
+                        score += 5
+                    drive_matches.append((score, img_cnt, root))
+
+            if drive_matches:
+                drive_matches.sort(key=lambda x: (x[0], x[1]), reverse=True)
+                best_score, best_cnt, best_path = drive_matches[0]
+                if best_score > 0:
+                    console.print(f"[bold green]🎯 ĐÃ TỰ ĐỘNG TÌM THẤY {best_cnt} ẢNH TRÊN GOOGLE DRIVE TẠI:[/bold green]\n   📂 [bold yellow]{best_path}[/bold yellow]")
+                    return best_path
 
         return base_dir
 
