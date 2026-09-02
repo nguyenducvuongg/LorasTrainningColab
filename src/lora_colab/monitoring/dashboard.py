@@ -52,6 +52,15 @@ class LiveTrainingDashboard:
 
         self._init_display()
 
+    def set_status(self, status_msg: str):
+        """Cập nhật thông báo trạng thái (dùng trong giai đoạn setup trước khi training bắt đầu)."""
+        self.status = status_msg
+        # Ghi vào log buffer để hiển thị
+        timestamp = time.strftime("%H:%M:%S")
+        self.recent_logs.append(f"[{timestamp}] {status_msg}")
+        if len(self.recent_logs) > self.max_log_lines:
+            self.recent_logs.pop(0)
+
     def _init_display(self):
         """Khởi tạo display handle trong môi trường Colab/IPython."""
         if self.is_colab:

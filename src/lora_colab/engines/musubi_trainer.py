@@ -173,7 +173,21 @@ resolution = {d_cfg.resolution}
         return cmd
 
     def train(self, resume_from: Optional[str] = None) -> bool:
+        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
+        dashboard = LiveTrainingDashboard(
+            model_name=self.config.training.model_family,
+            engine_name="Musubi-Tuner",
+            total_steps=total_steps,
+            total_epochs=self.config.training.epochs,
+            output_dir=self.config.training.checkpoint_dir
+        )
+        dashboard.set_status("⚙️ Đang chuẩn bị backend Musubi-Tuner... (có thể mất 3-8 phút lần đầu)")
+        dashboard.render()
+
         cmd = self.build_command_or_config(resume_from=resume_from)
+        dashboard.set_status("✅ Backend sẵn sàng! Đang khởi chạy training...")
+        dashboard.render()
+
         console.rule("[bold cyan]🚀 Musubi-Tuner (Kohya Next-Gen) Launch[/bold cyan]")
         console.print(f"  • Model: [cyan]{self.config.training.model_family}[/cyan]")
         console.print(f"  • Dataset: [cyan]{self.config.dataset.dataset_dir}[/cyan]")
@@ -183,15 +197,6 @@ resolution = {d_cfg.resolution}
         env = os.environ.copy()
         if os.path.exists(self.DEFAULT_MUSUBI_DIR):
             env["PYTHONPATH"] = f"{self.DEFAULT_MUSUBI_DIR}:{env.get('PYTHONPATH', '')}"
-
-        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
-        dashboard = LiveTrainingDashboard(
-            model_name=self.config.training.model_family,
-            engine_name="Musubi-Tuner",
-            total_steps=total_steps,
-            total_epochs=self.config.training.epochs,
-            output_dir=self.config.training.checkpoint_dir
-        )
 
         success = AutoEnvironmentManager.execute_with_self_healing(
             cmd,

@@ -205,8 +205,25 @@ class KohyaTrainer(BaseTrainer):
             return "train_network.py"
 
     def train(self, resume_from: Optional[str] = None) -> bool:
+        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
+
+        # 1. Khởi tạo Dashboard NGAY — hiển thị trạng thái setup trước khi clone/install
+        dashboard = LiveTrainingDashboard(
+            model_name=self.config.training.model_family,
+            engine_name="Kohya sd-scripts",
+            total_steps=total_steps,
+            total_epochs=self.config.training.epochs,
+            output_dir=self.config.training.checkpoint_dir
+        )
+        dashboard.set_status("⚙️ Đang chuẩn bị backend Kohya sd-scripts... (có thể mất 3-8 phút lần đầu)")
+        dashboard.render()
+
+        # 2. Clone & cài packages
         cmd = self.build_command_or_config(resume_from=resume_from)
-        
+
+        dashboard.set_status("✅ Backend sẵn sàng! Đang khởi chạy training...")
+        dashboard.render()
+
         console.print(f"[bold green]🚀 Khởi chạy Kohya Trainer cho {self.config.training.model_family}...[/bold green]")
         console.print(f"  • Base Model: [cyan]{self.config.training.base_model_path}[/cyan]")
         console.print(f"  • Dataset: [cyan]{self.config.dataset.dataset_dir}[/cyan]")
@@ -220,15 +237,7 @@ class KohyaTrainer(BaseTrainer):
             sd_dir = os.path.dirname(os.path.abspath(script_p))
             env["PYTHONPATH"] = f"{sd_dir}:{env.get('PYTHONPATH', '')}"
 
-        total_steps = self.config.training.max_train_steps or (self.config.training.epochs * 200)
-        dashboard = LiveTrainingDashboard(
-            model_name=self.config.training.model_family,
-            engine_name="Kohya sd-scripts",
-            total_steps=total_steps,
-            total_epochs=self.config.training.epochs,
-            output_dir=self.config.training.checkpoint_dir
-        )
-
+        # 3. Bắt đầu training thực sự
         success = AutoEnvironmentManager.execute_with_self_healing(
             cmd,
             env=env,

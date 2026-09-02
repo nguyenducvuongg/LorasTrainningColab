@@ -10,7 +10,7 @@ notebook_data = {
     "# 🎨 Colab LoRA Studio - Master All-in-One\n",
     "### Huấn Luyện LoRA Đa Kiến Trúc (Flux.1, Flux-Kontext, Krea2-Raw, SDXL, Pony v6, SD 3.5, SD 1.5)\n",
     "\n",
-    "[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/main/Colab_LoRA_Studio.ipynb)\n",
+    "[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/nguyenducvuongg/LorasTrainningColab/blob/master/Colab_LoRA_Studio.ipynb)\n",
     "\n",
     "---\n",
     "* **Tự Động Nhận Diện GPU (T4, L4, A100)** và tối ưu hóa VRAM/RAM thích ứng.\n",

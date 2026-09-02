@@ -323,18 +323,33 @@ class AIToolkitTrainer(BaseTrainer):
         return [sys.executable, target_run, config_path], self.DEFAULT_BACKEND_DIR
 
     def train(self, resume_from: Optional[str] = None) -> bool:
-        # 1. Đảm bảo backend Ostris/ai-toolkit đã sẵn sàng
-        self._ensure_backend_ready()
-
         is_flux, is_xl, is_sd15 = self._detect_model_arch()
+        total_steps = self._calc_total_steps()
+        arch_label = "Flux.1" if is_flux else ("SDXL/Krea" if is_xl else "SD 1.5")
+
+        # 1. Khởi tạo Dashboard NGAY LẬP TỨC — hiện thị setup progress trước khi clone/install
+        dashboard = LiveTrainingDashboard(
+            model_name=self.config.training.model_family,
+            engine_name=f"AI-Toolkit (Ostris) [{arch_label}]",
+            total_steps=total_steps,
+            total_epochs=self.config.training.epochs,
+            output_dir=self.config.training.checkpoint_dir
+        )
+        dashboard.set_status("⚙️ Đang chuẩn bị backend AI-Toolkit... (có thể mất 5-15 phút lần đầu)")
+        dashboard.render()
+
+        # 2. Clone backend + cài packages (user thấy dashboard trong khi chờ)
+        self._ensure_backend_ready()
+        dashboard.set_status("✅ Backend sẵn sàng! Đang khởi chạy training...")
+        dashboard.render()
+
+        # 3. Sinh config YAML
         config_dict = self.build_command_or_config()
         temp_config_path = os.path.join(self.config.training.checkpoint_dir, "ai_toolkit_active_config.yaml")
         os.makedirs(os.path.dirname(temp_config_path), exist_ok=True)
-
         with open(temp_config_path, "w", encoding="utf-8") as f:
             yaml.dump(config_dict, f, default_flow_style=False)
 
-        arch_label = "Flux.1" if is_flux else ("SDXL/Krea" if is_xl else "SD 1.5")
         console.print(f"[bold green]🚀 Khởi chạy AI-Toolkit Trainer ({arch_label}) cho {self.config.training.model_family}...[/bold green]")
         console.print(f"  • Cấu hình: [cyan]{temp_config_path}[/cyan]")
         console.print(f"  • Lưu checkpoint trực tiếp tại: [yellow]{self.config.training.checkpoint_dir}[/yellow]")
@@ -345,16 +360,7 @@ class AIToolkitTrainer(BaseTrainer):
         if ai_dir and os.path.exists(ai_dir):
             env["PYTHONPATH"] = f"{ai_dir}:{env.get('PYTHONPATH', '')}"
 
-        # 2. Khởi tạo Live Dashboard gọn gàng trong 1 viewheight
-        total_steps = self._calc_total_steps()
-        dashboard = LiveTrainingDashboard(
-            model_name=self.config.training.model_family,
-            engine_name="AI-Toolkit (Ostris)",
-            total_steps=total_steps,
-            total_epochs=self.config.training.epochs,
-            output_dir=self.config.training.checkpoint_dir
-        )
-
+        # 4. Bắt đầu training — dashboard cập nhật liên tục qua parse_log_line
         success = AutoEnvironmentManager.execute_with_self_healing(
             cmd,
             env=env,
