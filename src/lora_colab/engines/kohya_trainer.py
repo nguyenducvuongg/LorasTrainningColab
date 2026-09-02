@@ -52,12 +52,9 @@ class KohyaTrainer(BaseTrainer):
             if not AutoEnvironmentManager.is_package_installed(pkg.split(">=")[0].strip())
         ]
         if missing:
-            console.print(f"[bold yellow]📦 Tự động cài đặt trọn bộ phụ thuộc cho Kohya sd-scripts ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
+            console.print(f"[bold yellow]📦 Tự động cài đặt siêu tốc phụ thuộc cho Kohya sd-scripts ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
             AutoEnvironmentManager.install_packages(missing, silent=True)
-            console.print("[bold green]✓ Toàn bộ gói phụ trợ Kohya sd-scripts đã được nạp sẵn sàng 100%![/bold green]")
-
-        if os.path.exists(cls.DEFAULT_BACKEND_DIR):
-            AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_BACKEND_DIR)
+            console.print("[bold green]✓ Toàn bộ gói phụ trợ Kohya sd-scripts đã nạp sẵn sàng 100%![/bold green]")
 
     def _resolve_script_path(self) -> str:
         self._ensure_backend_ready()

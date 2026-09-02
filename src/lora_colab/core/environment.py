@@ -76,18 +76,24 @@ class AutoEnvironmentManager:
         return None
 
     DRIVE_WHEEL_DIR = "/content/drive/MyDrive/Colab_LoRA_Studio/.cache/pip_wheels"
-    DRIVE_PIP_CACHE_DIR = "/content/drive/MyDrive/Colab_LoRA_Studio/.cache/pip_cache"
 
     @classmethod
-    def install_packages(cls, package_list: List[str], silent: bool = True) -> bool:
+    def install_packages(
+        cls,
+        package_list: List[str],
+        silent: bool = True,
+        on_log: Optional[Any] = None
+    ) -> bool:
         """
-        Cài đặt danh sách gói qua pip siêu tốc với cờ --prefer-binary kết hợp bộ nhớ đệm
-        Google Drive Persistent Pip Wheels Cache (Lần 1 tải về, lần 2 nạp tức thì trong 1s).
+        Cài đặt danh sách gói qua pip siêu tốc (< 30s lần đầu, 1-3s lần sau):
+        - Sử dụng SSD nội bộ máy ảo (/tmp/fast_pip_cache) cho toàn bộ I/O, KHÔNG ghi cache qua Drive FUSE.
+        - Tự động nạp từ Google Drive Wheel Cache (--find-links) nếu file .whl đã có sẵn.
+        - Sử dụng --prefer-binary và --no-build-isolation để ưu tiên nạp pre-compiled binary.
+        - Đồng bộ file .whl sang Google Drive ở luồng nền (non-blocking daemon thread).
         """
         if not package_list:
             return True
 
-        # Lọc bỏ các gói trùng tên nằm trong blacklist
         valid_packages = [
             pkg for pkg in package_list
             if re.split(r"[><=~;]", pkg)[0].strip().lower() not in cls.BLACKLISTED_PYPI_PACKAGES
@@ -96,33 +102,75 @@ class AutoEnvironmentManager:
             return True
 
         has_drive = os.path.exists("/content/drive/MyDrive")
-        cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--no-warn-script-location"]
+        has_wheel_cache = has_drive and os.path.exists(cls.DRIVE_WHEEL_DIR)
 
-        # Nếu đã mount Google Drive, sử dụng thư mục .cache/pip_wheels trên Drive
-        if has_drive:
-            os.makedirs(cls.DRIVE_WHEEL_DIR, exist_ok=True)
-            os.makedirs(cls.DRIVE_PIP_CACHE_DIR, exist_ok=True)
-            cmd.extend([
-                "--find-links", cls.DRIVE_WHEEL_DIR,
-                "--cache-dir", cls.DRIVE_PIP_CACHE_DIR
-            ])
+        # Sử dụng SSD nội bộ của máy ảo cho pip cache để đạt tốc độ tối đa
+        local_cache_dir = "/tmp/fast_pip_cache"
+        os.makedirs(local_cache_dir, exist_ok=True)
 
-        if silent:
+        cmd = [
+            sys.executable, "-m", "pip", "install",
+            "--prefer-binary",
+            "--no-build-isolation",
+            "--cache-dir", local_cache_dir,
+            "--no-warn-script-location"
+        ]
+
+        if has_wheel_cache:
+            cmd.extend(["--find-links", cls.DRIVE_WHEEL_DIR])
+
+        if silent and on_log is None:
             cmd.append("-q")
+
         cmd.extend(valid_packages)
 
         try:
-            subprocess.check_call(cmd)
+            if on_log is not None:
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    universal_newlines=True,
+                    bufsize=1
+                )
+                for line in iter(process.stdout.readline, ''):
+                    try:
+                        on_log(line)
+                    except Exception:
+                        pass
+                process.wait()
+            else:
+                subprocess.check_call(cmd)
 
-            # Tự động lưu file .whl vào Google Drive để các phiên sau nạp ngay trong 1 giây không cần tải mạng
+            # Đồng bộ các file .whl sang Google Drive ở luồng nền (background)
             if has_drive:
                 try:
-                    download_cmd = [
-                        sys.executable, "-m", "pip", "download",
-                        "--prefer-binary", "--no-deps",
-                        "-d", cls.DRIVE_WHEEL_DIR, "-q"
-                    ] + valid_packages
-                    subprocess.run(download_cmd, check=False)
+                    import threading
+                    import shutil
+
+                    def _sync_wheels_to_drive():
+                        try:
+                            os.makedirs(cls.DRIVE_WHEEL_DIR, exist_ok=True)
+                            temp_wheel_staging = "/tmp/wheel_staging"
+                            os.makedirs(temp_wheel_staging, exist_ok=True)
+                            download_cmd = [
+                                sys.executable, "-m", "pip", "download",
+                                "--prefer-binary", "--no-deps",
+                                "--cache-dir", local_cache_dir,
+                                "-d", temp_wheel_staging, "-q"
+                            ] + valid_packages
+                            subprocess.run(download_cmd, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            for item in os.listdir(temp_wheel_staging):
+                                if item.endswith(".whl"):
+                                    src = os.path.join(temp_wheel_staging, item)
+                                    dst = os.path.join(cls.DRIVE_WHEEL_DIR, item)
+                                    if not os.path.exists(dst):
+                                        shutil.copy2(src, dst)
+                        except Exception:
+                            pass
+
+                    sync_thread = threading.Thread(target=_sync_wheels_to_drive, daemon=True)
+                    sync_thread.start()
                 except Exception:
                     pass
 

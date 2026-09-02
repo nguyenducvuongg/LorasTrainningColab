@@ -49,11 +49,9 @@ class MusubiTrainer(BaseTrainer):
                 if not AutoEnvironmentManager.is_package_installed(pkg.split(">=")[0].strip())
             ]
             if missing:
-                console.print(f"[bold yellow]📦 Tự động cài đặt trọn bộ phụ thuộc cho Musubi-Tuner ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}...[/dim]")
+                console.print(f"[bold yellow]📦 Tự động cài đặt siêu tốc phụ thuộc cho Musubi-Tuner ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}...[/dim]")
                 AutoEnvironmentManager.install_packages(missing, silent=True)
-                console.print("[bold green]✓ Toàn bộ gói phụ trợ Musubi-Tuner đã sẵn sàng![/bold green]")
-
-            AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_MUSUBI_DIR)
+                console.print("[bold green]✓ Toàn bộ gói phụ trợ Musubi-Tuner đã nạp sẵn sàng 100%![/bold green]")
 
     def _build_dataset_toml(self) -> str:
         """

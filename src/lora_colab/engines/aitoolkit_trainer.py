@@ -128,22 +128,19 @@ class AIToolkitTrainer(BaseTrainer):
         # 3. Tự động áp dụng bản vá lỗi mã nguồn nội bộ
         cls._patch_ai_toolkit_bugs()
 
-        # 4. Quét và cài đặt trọn gói các phụ thuộc cần thiết cho AI-Toolkit theo chuẩn SDVN
+        # 4. Quét và cài đặt trọn gói các phụ thuộc thiết yếu cho AI-Toolkit
         ai_toolkit_packages = [
             "oyaml>=1.0",
-            "optimum-quanto>=0.2.0",
-            "controlnet-aux>=0.0.7",
-            "av>=11.0.0",
-            "lpips>=0.1.4",
             "albumentations>=1.4.0",
             "flatten_dict>=0.4.0",
             "k-diffusion>=0.1.0",
             "open-clip-torch>=2.24.0",
             "invisible-watermark>=0.2.0",
             "clean-fid>=0.1.35",
-            "tensorboard>=2.14.0",
             "toml>=0.10.2",
             "bitsandbytes>=0.43.0",
+            "optimum-quanto>=0.2.0",
+            "tensorboard>=2.14.0",
             "python-dotenv>=1.0.0",
         ]
         missing = [
@@ -151,12 +148,9 @@ class AIToolkitTrainer(BaseTrainer):
             if not AutoEnvironmentManager.is_package_installed(pkg.split(">=")[0].strip())
         ]
         if missing:
-            console.print(f"[bold yellow]📦 Tự động cài đặt trọn bộ phụ thuộc cho AI-Toolkit ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
+            console.print(f"[bold yellow]📦 Tự động cài đặt siêu tốc phụ thuộc cho AI-Toolkit ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
             AutoEnvironmentManager.install_packages(missing, silent=True)
-            console.print("[bold green]✓ Toàn bộ gói phụ trợ AI-Toolkit đã được nạp sẵn sàng 100%![/bold green]")
-
-        if os.path.exists(cls.DEFAULT_BACKEND_DIR):
-            AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_BACKEND_DIR)
+            console.print("[bold green]✓ Toàn bộ gói phụ trợ AI-Toolkit đã nạp sẵn sàng 100%![/bold green]")
 
     def _detect_model_arch(self) -> Tuple[bool, bool, bool]:
         """
