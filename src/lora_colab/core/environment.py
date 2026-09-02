@@ -35,14 +35,6 @@ class AutoEnvironmentManager:
         "rich": "13.7.0",
         "pyyaml": "6.0.0",
         "oyaml": "1.0",
-        "albumentations": "1.4.0",
-        "flatten_dict": "0.4.0",
-        "invisible-watermark": "0.2.0",
-        "k-diffusion": "0.1.0",
-        "open-clip-torch": "2.24.0",
-        "optimum-quanto": "0.2.0",
-        "clean-fid": "0.1.35",
-        "tensorboard": "2.14.0",
         "toml": "0.10.2",
         "pillow": "10.0.0",
         "google-genai": "0.1.0",
@@ -81,10 +73,10 @@ class AutoEnvironmentManager:
 
     @classmethod
     def install_packages(cls, package_list: List[str], silent: bool = True) -> bool:
-        """Cài đặt danh sách gói qua pip."""
+        """Cài đặt danh sách gói qua pip siêu tốc với cờ --prefer-binary."""
         if not package_list:
             return True
-        cmd = [sys.executable, "-m", "pip", "install"]
+        cmd = [sys.executable, "-m", "pip", "install", "--prefer-binary", "--no-warn-script-location"]
         if silent:
             cmd.append("-q")
         cmd.extend(package_list)
