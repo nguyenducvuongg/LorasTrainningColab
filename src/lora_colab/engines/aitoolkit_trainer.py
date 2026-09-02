@@ -15,7 +15,7 @@ logger = setup_logger(__name__)
 class AIToolkitTrainer(BaseTrainer):
     """
     AI-Toolkit (Ostris) Trainer Engine.
-    Optimized for Flux.1-dev, Flux.1-schnell, Flux-Kontext, and Krea2-raw LoRA training.
+    Học hỏi và tối ưu hóa theo kiến trúc chuẩn SDVN & Ostris cho Flux.1 (Dev, Schnell, Kontext, Krea2-raw, Chroma).
     """
 
     BACKEND_REPO_URL = "https://github.com/ostris/ai-toolkit.git"
@@ -24,8 +24,8 @@ class AIToolkitTrainer(BaseTrainer):
     @classmethod
     def _ensure_backend_ready(cls):
         """
-        Đảm bảo kho mã nguồn Ostris AI-Toolkit đã được clone chuẩn xác và
-        dọn dẹp các gói PyPI trùng tên không liên quan (ai-toolkit, dataslots, wget).
+        Đảm bảo kho mã nguồn Ostris AI-Toolkit đã được clone chuẩn xác (--recurse-submodules)
+        và nạp đầy đủ các phụ thuộc cần thiết chuẩn theo SDVN & Ostris.
         """
         # 1. Gỡ bỏ gói PyPI trùng tên nếu đã lỡ cài nhầm
         if AutoEnvironmentManager.is_package_installed("dataslots") or AutoEnvironmentManager.is_package_installed("ai_toolkit"):
@@ -40,17 +40,20 @@ class AIToolkitTrainer(BaseTrainer):
             except Exception:
                 pass
 
-        # 2. Clone kho mã nguồn chính thức của Ostris nếu chưa có
+        # 2. Clone kho mã nguồn chính thức của Ostris nếu chưa có (với --recurse-submodules)
         if os.path.exists("/content") and not os.path.exists(cls.DEFAULT_BACKEND_DIR):
             console.print("[bold cyan]📥 Tải và cấu hình backend chính thức [bold]Ostris/AI-Toolkit[/bold]...[/bold cyan]")
             try:
                 os.makedirs(os.path.dirname(cls.DEFAULT_BACKEND_DIR), exist_ok=True)
-                subprocess.check_call(["git", "clone", "--depth", "1", cls.BACKEND_REPO_URL, cls.DEFAULT_BACKEND_DIR])
+                subprocess.check_call([
+                    "git", "clone", "--depth", "1", "--recurse-submodules",
+                    cls.BACKEND_REPO_URL, cls.DEFAULT_BACKEND_DIR
+                ])
                 console.print("[bold green]✓ AI-Toolkit (Ostris) đã sẵn sàng![/bold green]")
             except Exception as e:
                 logger.warning(f"Could not clone ai-toolkit: {e}")
 
-        # 3. Quét và cài đặt trọn gói các phụ thuộc cần thiết cho AI-Toolkit trong 1 lần duy nhất
+        # 3. Quét và cài đặt trọn gói các phụ thuộc cần thiết cho AI-Toolkit theo chuẩn SDVN
         ai_toolkit_packages = [
             "oyaml>=1.0",
             "optimum-quanto>=0.2.0",
@@ -65,7 +68,8 @@ class AIToolkitTrainer(BaseTrainer):
             "clean-fid>=0.1.35",
             "tensorboard>=2.14.0",
             "toml>=0.10.2",
-            "bitsandbytes>=0.43.0"
+            "bitsandbytes>=0.43.0",
+            "python-dotenv>=1.0.0"
         ]
         missing = [
             pkg for pkg in ai_toolkit_packages
@@ -90,73 +94,92 @@ class AIToolkitTrainer(BaseTrainer):
         is_flux = any(k in model_str for k in ["flux", "krea", "chroma", "kontext", "black-forest-labs", "schnell", "dev", "raw"])
         quantize_base = True if (is_flux or t_cfg.mixed_precision == "fp8" or "8bit" in t_cfg.optimizer_type.lower()) else False
 
+        process_config: Dict[str, Any] = {
+            "type": "diffusion_trainer",
+            "training_folder": t_cfg.checkpoint_dir,
+            "device": "cuda:0",
+            "performance_log_every": 10,
+            "network": {
+                "type": "lora",
+                "linear": n_cfg.network_dim,
+                "linear_alpha": n_cfg.network_alpha,
+            },
+            "save": {
+                "dtype": "bfloat16" if t_cfg.mixed_precision == "bf16" else "float16",
+                "save_every": t_cfg.save_every_n_steps or 250,
+                "max_step_saves_to_keep": 4,
+                "save_format": "diffusers",
+                "push_to_hub": False,
+            },
+            "datasets": [
+                {
+                    "folder_path": d_cfg.dataset_dir,
+                    "caption_ext": d_cfg.caption_extension.replace(".", ""),
+                    "caption_dropout_rate": 0.05,
+                    "shuffle_tokens": d_cfg.shuffle_caption,
+                    "cache_latents_to_disk": t_cfg.cache_latents_to_disk,
+                    "resolution": [512, 768, 1024] if d_cfg.enable_bucketing else [d_cfg.resolution],
+                    "num_repeats": d_cfg.repeats if hasattr(d_cfg, "repeats") else 1,
+                }
+            ],
+            "train": {
+                "batch_size": t_cfg.batch_size,
+                "steps": t_cfg.max_train_steps or (t_cfg.epochs * 200),
+                "gradient_accumulation": t_cfg.gradient_accumulation_steps,
+                "gradient_accumulation_steps": t_cfg.gradient_accumulation_steps,
+                "train_unet": True,
+                "train_text_encoder": False,  # Keeps VRAM stable on T4/L4
+                "gradient_checkpointing": t_cfg.gradient_checkpointing,
+                "noise_scheduler": "flowmatch" if is_flux else "ddim",
+                "optimizer": "adamw8bit" if "8bit" in t_cfg.optimizer_type.lower() else "adamw",
+                "timestep_type": "shift" if is_flux else "linear",
+                "content_or_style": "balanced" if is_flux else "balanced",
+                "lr": t_cfg.learning_rate,
+                "lr_scheduler": t_cfg.lr_scheduler or "constant",
+                "ema_config": {
+                    "use_ema": True,
+                    "ema_decay": 0.99
+                },
+                "dtype": "bfloat16" if t_cfg.mixed_precision == "bf16" else "float16",
+                "loss_type": "mse",
+            },
+            "model": {
+                "name_or_path": t_cfg.base_model_path,
+                "arch": "flux" if is_flux else "sd",
+                "is_flux": is_flux,
+                "quantize": quantize_base,
+                "qtype": "qfloat8" if is_flux else None,
+                "quantize_te": quantize_base if is_flux else False,
+                "qtype_te": "qfloat8" if is_flux else None,
+                "low_vram": True if is_flux else False,
+            },
+            "sample": {
+                "sampler": "flowmatch" if is_flux else "euler",
+                "sample_every": t_cfg.sample_every_n_steps,
+                "width": d_cfg.resolution,
+                "height": d_cfg.resolution,
+                "prompts": [
+                    t_cfg.sample_prompt or "a portrait photo of sks person in high detail"
+                ],
+                "neg": "ugly, low quality, deformed, blurry",
+                "seed": 42,
+                "walk_seed": True,
+                "guidance_scale": 3.5 if is_flux else 7.0,
+                "sample_steps": 20 if is_flux else 28,
+            }
+        }
+
+        # Filter out None values for clean YAML serialization
+        def clean_none(d):
+            if isinstance(d, dict):
+                return {k: clean_none(v) for k, v in d.items() if v is not None}
+            return d
+
         ai_toolkit_yaml = {
             "job": "extension",
             "config": {
                 "name": t_cfg.output_name,
-                "process": [
-                    {
-                        "type": "sd_trainer",
-                        "training_folder": t_cfg.checkpoint_dir,
-                        "device": "cuda:0",
-                        "network": {
-                            "type": "lora",
-                            "linear": n_cfg.network_dim,
-                            "linear_alpha": n_cfg.network_alpha,
-                        },
-                        "save": {
-                            "dtype": "float16" if t_cfg.mixed_precision == "fp16" else "bfloat16",
-                            "save_every": t_cfg.save_every_n_steps or 250,
-                            "max_step_saves_to_keep": 4,
-                        },
-                        "datasets": [
-                            {
-                                "folder_path": d_cfg.dataset_dir,
-                                "caption_ext": d_cfg.caption_extension.replace(".", ""),
-                                "caption_dropout_rate": 0.05,
-                                "shuffle_tokens": d_cfg.shuffle_caption,
-                                "cache_latents_to_disk": t_cfg.cache_latents_to_disk,
-                                "resolution": [512, 768, 1024] if d_cfg.enable_bucketing else [d_cfg.resolution, d_cfg.resolution],
-                            }
-                        ],
-                        "train": {
-                            "batch_size": t_cfg.batch_size,
-                            "steps": t_cfg.max_train_steps or (t_cfg.epochs * 200),
-                            "gradient_accumulation_steps": t_cfg.gradient_accumulation_steps,
-                            "train_unet": True,
-                            "train_text_encoder": False,  # Keeps VRAM under control on T4/L4
-                            "gradient_checkpointing": t_cfg.gradient_checkpointing,
-                            "noise_scheduler": "flowmatch" if is_flux else "ddim",
-                            "optimizer": "adamw8bit" if "8bit" in t_cfg.optimizer_type.lower() else "adamw",
-                            "lr": t_cfg.learning_rate,
-                            "ema_config": {
-                                "use_ema": True,
-                                "ema_decay": 0.99
-                            },
-                            "dtype": "bfloat16" if t_cfg.mixed_precision == "bf16" else "float16",
-                        },
-                        "model": {
-                            "name_or_path": t_cfg.base_model_path,
-                            "is_flux": is_flux,
-                            "quantize": quantize_base,
-                            "low_vram": True if is_flux else False,
-                        },
-                        "sample": {
-                            "sampler": "flowmatch" if is_flux else "euler",
-                            "sample_every": t_cfg.sample_every_n_steps,
-                            "width": d_cfg.resolution,
-                            "height": d_cfg.resolution,
-                            "prompts": [
-                                t_cfg.sample_prompt or "a portrait photo of sks person in high detail"
-                            ],
-                            "neg": "ugly, low quality, deformed, blurry",
-                            "seed": 42,
-                            "walk_seed": True,
-                            "guidance_scale": 3.5 if is_flux else 7.0,
-                            "sample_steps": 25 if is_flux else 28,
-                        }
-                    }
-                ]
+                "process": [clean_none(process_config)]
             }
         }
 

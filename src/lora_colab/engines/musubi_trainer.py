@@ -32,6 +32,24 @@ class MusubiTrainer(BaseTrainer):
                 logger.warning(f"Could not clone musubi-tuner: {e}")
 
         if os.path.exists(cls.DEFAULT_MUSUBI_DIR):
+            musubi_packages = [
+                "toml>=0.10.2",
+                "voluptuous>=0.13.0",
+                "imagesize>=1.4.1",
+                "albumentations>=1.4.0",
+                "open-clip-torch>=2.24.0",
+                "prodigyopt>=1.0",
+                "lycoris-lora>=2.2.0"
+            ]
+            missing = [
+                pkg for pkg in musubi_packages
+                if not AutoEnvironmentManager.is_package_installed(pkg.split(">=")[0].strip())
+            ]
+            if missing:
+                console.print(f"[bold yellow]📦 Tự động cài đặt trọn bộ phụ thuộc cho Musubi-Tuner ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}...[/dim]")
+                AutoEnvironmentManager.install_packages(missing, silent=True)
+                console.print("[bold green]✓ Toàn bộ gói phụ trợ Musubi-Tuner đã sẵn sàng![/bold green]")
+
             AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_MUSUBI_DIR)
 
     def _resolve_runner_path(self) -> str:
