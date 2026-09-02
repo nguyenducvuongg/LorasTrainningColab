@@ -84,7 +84,8 @@ class GeminiVisionCaptioner(BaseCaptioner):
         self,
         directory: str,
         trigger_word: Optional[str] = None,
-        overwrite: bool = False
+        overwrite: bool = False,
+        skip_existing: bool = True
     ) -> Dict[str, int]:
         """Captions all images in a directory using Gemini API."""
         valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -93,20 +94,32 @@ class GeminiVisionCaptioner(BaseCaptioner):
             if os.path.splitext(f)[-1].lower() in valid_exts
         ]
 
-        console.print(f"[bold cyan]✨ Captioning {len(images)} images in '{directory}' using Gemini Vision API ({self.model_name})...[/bold cyan]")
-        
-        success_count = 0
+        images_to_process = []
         skipped_count = 0
-
-        for img_path in tqdm(images, desc="Gemini Captioning"):
+        for img_path in images:
             base_name = os.path.splitext(img_path)[0]
             txt_path = base_name + ".txt"
+            if os.path.exists(txt_path) and not overwrite and skip_existing:
+                try:
+                    with open(txt_path, "r", encoding="utf-8") as f:
+                        if f.read().strip():
+                            skipped_count += 1
+                            continue
+                except Exception:
+                    pass
+            images_to_process.append(img_path)
 
-            if os.path.exists(txt_path) and not overwrite:
-                skipped_count += 1
-                continue
+        if not images_to_process:
+            console.print(f"[bold green]⚡ Tất cả {len(images)} ảnh đã có sẵn file caption .txt tương ứng![/bold green] Bỏ qua Gemini API.")
+            return {"processed": 0, "skipped": skipped_count}
 
+        console.print(f"[bold cyan]✨ Captioning {len(images_to_process)}/{len(images)} images in '{directory}' using Gemini Vision API ({self.model_name})...[/bold cyan]")
+        
+        success_count = 0
+        for img_path in tqdm(images_to_process, desc="Gemini Captioning"):
             caption = self.caption_image(img_path, trigger_word=trigger_word)
+            base_name = os.path.splitext(img_path)[0]
+            txt_path = base_name + ".txt"
             with open(txt_path, "w", encoding="utf-8") as f:
                 f.write(caption)
             success_count += 1

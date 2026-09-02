@@ -65,7 +65,8 @@ class BaseCaptioner(ABC):
         self,
         directory: str,
         trigger_word: Optional[str] = None,
-        overwrite: bool = False
+        overwrite: bool = False,
+        skip_existing: bool = True
     ) -> Dict[str, int]:
         """Generates captions for all images in a directory."""
         pass

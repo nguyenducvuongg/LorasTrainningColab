@@ -106,26 +106,40 @@ class WD14Tagger(BaseCaptioner):
         self,
         directory: str,
         trigger_word: Optional[str] = None,
-        overwrite: bool = False
+        overwrite: bool = False,
+        skip_existing: bool = True
     ) -> Dict[str, int]:
-        self._lazy_load_model()
         valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
         images = [
             os.path.join(directory, f) for f in os.listdir(directory)
             if os.path.splitext(f)[-1].lower() in valid_exts
         ]
 
-        console.print(f"[bold cyan]🏷️ Tagging {len(images)} images in '{directory}' using WD14 Tagger v3...[/bold cyan]")
-        success = 0
+        images_to_process = []
         skipped = 0
-
-        for img_p in tqdm(images, desc="WD14 Tagging"):
+        for img_p in images:
             txt_p = os.path.splitext(img_p)[0] + ".txt"
-            if os.path.exists(txt_p) and not overwrite:
-                skipped += 1
-                continue
+            if os.path.exists(txt_p) and not overwrite and skip_existing:
+                try:
+                    with open(txt_p, "r", encoding="utf-8") as f:
+                        if f.read().strip():
+                            skipped += 1
+                            continue
+                except Exception:
+                    pass
+            images_to_process.append(img_p)
 
+        if not images_to_process:
+            console.print(f"[bold green]⚡ Tất cả {len(images)} ảnh đã có sẵn file caption .txt tương ứng![/bold green] Bỏ qua WD14.")
+            return {"processed": 0, "skipped": skipped}
+
+        self._lazy_load_model()
+        console.print(f"[bold cyan]🏷️ Tagging {len(images_to_process)}/{len(images)} images in '{directory}' using WD14 Tagger v3...[/bold cyan]")
+        success = 0
+
+        for img_p in tqdm(images_to_process, desc="WD14 Tagging"):
             caption = self.caption_image(img_p, trigger_word=trigger_word)
+            txt_p = os.path.splitext(img_p)[0] + ".txt"
             with open(txt_p, "w", encoding="utf-8") as f:
                 f.write(caption)
             success += 1
