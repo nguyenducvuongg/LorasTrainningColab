@@ -264,18 +264,37 @@ class AutoEnvironmentManager:
             "runtime_info": info
         }
 
+    KNOWN_MODULE_MAP = {
+        "optimum": "optimum-quanto",
+        "quanto": "optimum-quanto",
+        "open_clip": "open-clip-torch",
+        "cv2": "opencv-python-headless",
+        "PIL": "pillow",
+        "yaml": "pyyaml",
+        "dotenv": "python-dotenv",
+        "imwatermark": "invisible-watermark",
+        "voluptuous": "voluptuous",
+        "imagesize": "imagesize",
+        "albumentations": "albumentations",
+        "flatten_dict": "flatten_dict",
+        "lpips": "lpips",
+        "av": "av",
+        "oyaml": "oyaml"
+    }
+
     @classmethod
     def execute_with_self_healing(
         cls,
         cmd: List[str],
         env: Optional[Dict[str, str]] = None,
         cwd: Optional[str] = None,
-        max_retries: int = 2,
+        max_retries: int = 6,
         on_log_line: Optional[Any] = None
     ) -> bool:
         """
         Thực thi tiến trình với cơ chế tự sửa lỗi (Self-Healing) và hỗ trợ cập nhật Live Dashboard:
-        Nếu phát hiện ModuleNotFoundError trong log, tự động bắt tên module, cài đặt qua pip và chạy lại!
+        Nếu phát hiện ModuleNotFoundError trong log, tự động ánh xạ sang tên gói PyPI chính xác,
+        cài đặt tức thì qua pip và khởi động lại tiến trình!
         """
         for attempt in range(max_retries + 1):
             process = subprocess.Popen(
@@ -307,7 +326,9 @@ class AutoEnvironmentManager:
                     if match:
                         mod = match.group(1).split(".")[0].strip().lower()
                         if mod not in cls.BLACKLISTED_PYPI_PACKAGES:
-                            missing_module = mod
+                            # Ánh xạ tên import module sang tên package PyPI chuẩn
+                            pkg_to_install = cls.KNOWN_MODULE_MAP.get(mod, mod)
+                            missing_module = pkg_to_install
 
             process.wait()
 
@@ -316,7 +337,7 @@ class AutoEnvironmentManager:
 
             # Nếu có lỗi thiếu module và còn lượt thử lại -> Auto-Heal
             if missing_module and attempt < max_retries:
-                console.print(f"\n[bold yellow]🛠️ Tự động phát hiện thiếu module: [red]{missing_module}[/red] -> Tiến hành tự động cài đặt và chạy lại...[/bold yellow]")
+                console.print(f"\n[bold yellow]🛠️ Tự động phát hiện thiếu gói: [red]{missing_module}[/red] -> Tiến hành tự động cài đặt và chạy lại...[/bold yellow]")
                 cls.install_packages([missing_module], silent=False)
                 console.print(f"[bold green]✓ Đã cài đặt {missing_module}. Đang khởi động lại tiến trình ({attempt + 1}/{max_retries})...[/bold green]\n")
                 continue

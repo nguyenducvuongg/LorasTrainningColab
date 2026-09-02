@@ -31,6 +31,26 @@ class KohyaTrainer(BaseTrainer):
             except Exception as e:
                 logger.warning(f"Could not clone sd-scripts: {e}")
 
+        # Quét và cài đặt trọn gói các phụ thuộc cần thiết cho Kohya sd-scripts trong 1 lần duy nhất
+        kohya_packages = [
+            "toml>=0.10.2",
+            "voluptuous>=0.13.0",
+            "imagesize>=1.4.1",
+            "albumentations>=1.4.0",
+            "open-clip-torch>=2.24.0",
+            "dadaptation>=3.1",
+            "prodigyopt>=1.0",
+            "lycoris-lora>=2.2.0"
+        ]
+        missing = [
+            pkg for pkg in kohya_packages
+            if not AutoEnvironmentManager.is_package_installed(pkg.split(">=")[0].strip())
+        ]
+        if missing:
+            console.print(f"[bold yellow]📦 Tự động cài đặt trọn bộ phụ thuộc cho Kohya sd-scripts ({len(missing)} gói):[/bold yellow] [dim]{', '.join(missing[:4])}{'...' if len(missing) > 4 else ''}[/dim]")
+            AutoEnvironmentManager.install_packages(missing, silent=True)
+            console.print("[bold green]✓ Toàn bộ gói phụ trợ Kohya sd-scripts đã được nạp sẵn sàng 100%![/bold green]")
+
         if os.path.exists(cls.DEFAULT_BACKEND_DIR):
             AutoEnvironmentManager.ensure_engine_dependencies(cls.DEFAULT_BACKEND_DIR)
 
