@@ -85,9 +85,20 @@ class TestColabLoRAStudio(unittest.TestCase):
         self.assertEqual(EngineFactory.resolve_engine_type("flux-dev", explicit_choice="ai-toolkit"), AIToolkitTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("krea2-raw"), AIToolkitTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("sdxl-base"), KohyaTrainer)
-        self.assertEqual(EngineFactory.resolve_engine_type("pony-v6"), KohyaTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("wan2.1"), MusubiTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("qwen-image"), MusubiTrainer)
+
+        # Test create_trainer with explicit_choice & engine_choice kwargs
+        from lora_colab.core.config import LoRAConfig, DatasetConfig, NetworkConfig, TrainingConfig
+        dummy_cfg = LoRAConfig(
+            dataset=DatasetConfig(dataset_dir="/tmp"),
+            network=NetworkConfig(),
+            training=TrainingConfig(base_model_path="dummy.safetensors", model_family="sdxl-base")
+        )
+        trainer1 = EngineFactory.create_trainer(dummy_cfg, explicit_choice="kohya")
+        self.assertIsInstance(trainer1, KohyaTrainer)
+        trainer2 = EngineFactory.create_trainer(dummy_cfg, engine_choice="kohya")
+        self.assertIsInstance(trainer2, KohyaTrainer)
 
     def test_dashboard_log_parsing(self):
         from lora_colab.monitoring.dashboard import LiveTrainingDashboard

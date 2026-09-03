@@ -72,9 +72,15 @@ class EngineFactory:
         return descriptions.get(engine_cls, str(engine_cls.__name__))
 
     @classmethod
-    def create_trainer(cls, config: LoRAConfig, engine_choice: Optional[str] = None) -> BaseTrainer:
+    def create_trainer(
+        cls, 
+        config: LoRAConfig, 
+        explicit_choice: Optional[str] = None, 
+        engine_choice: Optional[str] = None
+    ) -> BaseTrainer:
         """Khởi tạo Trainer với engine tối ưu được chọn tự động."""
-        engine_cls = cls.resolve_engine_type(config.training.model_family, explicit_choice=engine_choice)
+        choice = explicit_choice or engine_choice
+        engine_cls = cls.resolve_engine_type(config.training.model_family, explicit_choice=choice)
         desc = cls.get_engine_description(engine_cls)
 
         console.rule("[bold cyan]🎯 Bộ Điều Phối Engine Huấn Luyện Thông Minh[/bold cyan]")
