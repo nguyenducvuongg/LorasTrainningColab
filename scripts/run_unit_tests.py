@@ -79,7 +79,10 @@ class TestColabLoRAStudio(unittest.TestCase):
         from lora_colab.engines.kohya_trainer import KohyaTrainer
         from lora_colab.engines.musubi_trainer import MusubiTrainer
 
-        self.assertEqual(EngineFactory.resolve_engine_type("flux-dev"), AIToolkitTrainer)
+        # flux-dev default is KohyaTrainer (flux_train_network.py for offline safetensors)
+        self.assertEqual(EngineFactory.resolve_engine_type("flux-dev"), KohyaTrainer)
+        # explicit choice for ai-toolkit still resolves to AIToolkitTrainer
+        self.assertEqual(EngineFactory.resolve_engine_type("flux-dev", explicit_choice="ai-toolkit"), AIToolkitTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("krea2-raw"), AIToolkitTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("sdxl-base"), KohyaTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("pony-v6"), KohyaTrainer)
@@ -114,6 +117,44 @@ class TestColabLoRAStudio(unittest.TestCase):
             self.assertIsNotNone(res)
             self.assertEqual(res[0], ckpt_path)
             self.assertEqual(res[1], 800)
+
+    def test_kohya_flux_command_generation(self):
+        from lora_colab.engines.kohya_trainer import KohyaTrainer
+        from lora_colab.core.config import LoRAConfig
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            models_dir = os.path.join(tmp_dir, "models")
+            flux_dir = os.path.join(models_dir, "flux")
+            enc_dir = os.path.join(models_dir, "text_encoders")
+            vae_dir = os.path.join(models_dir, "vae")
+            os.makedirs(flux_dir, exist_ok=True)
+            os.makedirs(enc_dir, exist_ok=True)
+            os.makedirs(vae_dir, exist_ok=True)
+
+            model_file = os.path.join(flux_dir, "flux1-dev.safetensors")
+            clip_file = os.path.join(enc_dir, "clip_l.safetensors")
+            t5_file = os.path.join(enc_dir, "t5xxl_fp8_e4m3fn.safetensors")
+            vae_file = os.path.join(vae_dir, "ae.safetensors")
+
+            for f in [model_file, clip_file, t5_file, vae_file]:
+                with open(f, "wb") as fp:
+                    fp.write(b"x" * 2000)
+
+            from lora_colab.core.config import DatasetConfig, NetworkConfig, TrainingConfig
+            cfg = LoRAConfig(
+                dataset=DatasetConfig(dataset_dir=tmp_dir),
+                network=NetworkConfig(),
+                training=TrainingConfig(base_model_path=model_file, model_family="flux-dev")
+            )
+            
+            trainer = KohyaTrainer(cfg)
+            cmd = trainer.build_command_or_config()
+            
+            cmd_str = " ".join(cmd)
+            self.assertIn("flux_train_network.py", cmd_str)
+            self.assertIn("--network_module=networks.lora_flux", cmd_str)
+            self.assertIn(f"--clip_l={clip_file}", cmd_str)
+            self.assertIn(f"--t5xxl={t5_file}", cmd_str)
+            self.assertIn(f"--ae={vae_file}", cmd_str)
 
 if __name__ == "__main__":
     unittest.main()

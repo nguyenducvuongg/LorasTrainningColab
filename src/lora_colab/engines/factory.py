@@ -18,8 +18,8 @@ class EngineFactory:
 
     # Priority-ordered list: specific → general. Kiểm tra theo thứ tự từ trên xuống.
     PRIORITY_ENGINE_MAP: List[tuple] = [
-        # Flux family → AI-Toolkit
-        (["flux-kontext", "flux-schnell", "flux-dev", "flux", "chroma"], AIToolkitTrainer),
+        # Flux family (.safetensors) → KohyaTrainer (flux_train_network.py)
+        (["flux-kontext", "flux-schnell", "flux-dev", "flux", "chroma"], KohyaTrainer),
         # Krea → AI-Toolkit (SDXL-based nhưng ai-toolkit hỗ trợ)
         (["krea2-raw", "krea"], AIToolkitTrainer),
         # SDXL variants (match specific trước để tránh "sd" match nhầm)

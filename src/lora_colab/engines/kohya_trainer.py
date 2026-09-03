@@ -72,11 +72,31 @@ class KohyaTrainer(BaseTrainer):
                 return p
         return os.path.join(self.DEFAULT_BACKEND_DIR, script_name)
 
+    @staticmethod
+    def _find_aux_file(base_model_path: str, subfolder: str, filename: str) -> Optional[str]:
+        """Tự động tìm kiếm file phụ trợ (text encoder, VAE) trên Google Drive hoặc local."""
+        candidates = []
+        try:
+            models_dir = os.path.dirname(os.path.dirname(os.path.abspath(base_model_path)))
+            candidates.append(os.path.join(models_dir, subfolder, filename))
+        except Exception:
+            pass
+        candidates.extend([
+            os.path.join("/content/drive/MyDrive/Colab_LoRA_Studio/models", subfolder, filename),
+            os.path.join("/content/models", subfolder, filename),
+            os.path.join(os.getcwd(), "models", subfolder, filename),
+        ])
+        for p in candidates:
+            if os.path.exists(p) and os.path.getsize(p) > 1000:
+                return p
+        return None
+
     def build_command_or_config(self, resume_from: Optional[str] = None) -> List[str]:
         cfg = self.config
         t_cfg = cfg.training
         d_cfg = cfg.dataset
         n_cfg = cfg.network
+        fam = t_cfg.model_family.lower()
 
         resolved_script = self._resolve_script_path()
         cmd = [
@@ -104,6 +124,39 @@ class KohyaTrainer(BaseTrainer):
             f"--caption_extension={d_cfg.caption_extension}",
             f"--logging_dir={t_cfg.logging_dir}",
         ]
+
+        # Tự động nạp Text Encoders & VAE theo từng kiến trúc model
+        if "flux" in fam or resolved_script.endswith("flux_train_network.py"):
+            clip_l = self._find_aux_file(t_cfg.base_model_path, "text_encoders", "clip_l.safetensors")
+            t5xxl = self._find_aux_file(t_cfg.base_model_path, "text_encoders", "t5xxl_fp8_e4m3fn.safetensors")
+            ae = self._find_aux_file(t_cfg.base_model_path, "vae", "ae.safetensors")
+            if clip_l:
+                cmd.append(f"--clip_l={clip_l}")
+            if t5xxl:
+                cmd.append(f"--t5xxl={t5xxl}")
+            if ae:
+                cmd.append(f"--ae={ae}")
+            # Flux yêu cầu networks.lora_flux
+            for idx, arg in enumerate(cmd):
+                if arg.startswith("--network_module="):
+                    cmd[idx] = "--network_module=networks.lora_flux"
+                    break
+
+        elif "sd3" in fam or resolved_script.endswith("sd3_train_network.py"):
+            clip_l = self._find_aux_file(t_cfg.base_model_path, "text_encoders", "clip_l.safetensors")
+            clip_g = self._find_aux_file(t_cfg.base_model_path, "text_encoders", "clip_g.safetensors")
+            t5xxl = self._find_aux_file(t_cfg.base_model_path, "text_encoders", "t5xxl_fp8_e4m3fn.safetensors")
+            if clip_l:
+                cmd.append(f"--clip_l={clip_l}")
+            if clip_g:
+                cmd.append(f"--clip_g={clip_g}")
+            if t5xxl:
+                cmd.append(f"--t5xxl={t5xxl}")
+
+        elif any(k in fam for k in ["sdxl", "pony", "illustrious"]):
+            sdxl_vae = self._find_aux_file(t_cfg.base_model_path, "vae", "sdxl_vae.safetensors")
+            if sdxl_vae:
+                cmd.append(f"--vae={sdxl_vae}")
 
         # Bucket resolution: dùng field chuẩn min_bucket_res/max_bucket_res từ DatasetConfig
         if d_cfg.enable_bucketing:

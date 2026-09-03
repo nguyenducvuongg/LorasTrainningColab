@@ -318,6 +318,13 @@ class AIToolkitTrainer(BaseTrainer):
 
     def train(self, resume_from: Optional[str] = None) -> bool:
         is_flux, is_xl, is_sd15 = self._detect_model_arch()
+        if is_flux and self.config.training.base_model_path.endswith((".safetensors", ".ckpt")):
+            console.print("[bold yellow]⚡ Phát hiện FLUX base model là file .safetensors đơn lẻ (chưa giải nén diffusers folder).[/bold yellow]")
+            console.print("[bold cyan]🔄 Tự động chuyển sang Kohya sd-scripts (flux_train_network.py) để train trực tiếp 100% OFFLINE từ Google Drive, an toàn tuyệt đối không phụ thuộc Hugging Face![/bold cyan]")
+            from .kohya_trainer import KohyaTrainer
+            trainer = KohyaTrainer(self.config)
+            return trainer.train(resume_from=resume_from)
+
         total_steps = self._calc_total_steps()
         arch_label = "Flux.1" if is_flux else ("SDXL/Krea" if is_xl else "SD 1.5")
 
