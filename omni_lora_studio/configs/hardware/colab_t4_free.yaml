@@ -1,0 +1,10 @@
+# Tối ưu hóa tuyệt đối cho Google Colab Free (Tesla T4 16GB VRAM)
+hardware_tier: "T4_FREE"
+mixed_precision: "fp16"
+enable_fp8: true
+enable_cpu_offload: true
+cache_latents_to_disk: true
+gradient_checkpointing: true
+recommended_batch_size: 1
+gradient_accumulation_steps: 2
+optimizer: "Prodigy"

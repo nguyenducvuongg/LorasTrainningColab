@@ -1,0 +1,10 @@
+model_family: "flux-dev"
+base_model_path: "black-forest-labs/FLUX.1-dev"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
+flow_matching: true
+discrete_flow_shift: 3.1582

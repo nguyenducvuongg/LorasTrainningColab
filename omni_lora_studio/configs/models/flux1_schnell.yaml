@@ -1,0 +1,9 @@
+model_family: "flux-schnell"
+base_model_path: "black-forest-labs/FLUX.1-schnell"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
+flow_matching: true

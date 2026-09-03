@@ -1,0 +1,29 @@
+# CẤU HÌNH TỐI THƯỢNG CHO ĐỘ GIỐNG KHUÔN MẶT 100%
+objective: "face_identity_100"
+description: "Chuyên sâu nhận diện khuôn mặt, ánh mắt, thần thái, đạt độ giống tuyệt đối với ảnh thật"
+
+dataset:
+  repeats: 10
+  resolution: 1024
+  enable_bucketing: true
+  auto_caption: true
+  caption_backend: "joycaption"
+  subject_decoupling: true       # Bắt buộc: Triệt tiêu đặc điểm nhận diện mặt cố định khỏi caption
+  face_crop_multiscale: true     # Bắt buộc: Tạo song song Macro Face 1024px + Medium + Full-body
+
+training:
+  network_dim: 32
+  network_alpha: 16
+  use_dora: true                # Bắt buộc: DoRA mô phỏng 100% khả năng tái hiện của Full Fine-Tune
+  optimizer_type: "Prodigy"     # Tự động tính Learning Rate hoàn hảo
+  learning_rate: 1.0
+  epochs: 12
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  save_every_n_epochs: 2
+
+validation:
+  enabled: true
+  sample_every_n_steps: 200
+  compute_likeness_score: true  # Đo lường ArcFace Cosine Similarity thời gian thực
+  select_best_checkpoint: true  # Tự động chọn file đạt điểm cao nhất

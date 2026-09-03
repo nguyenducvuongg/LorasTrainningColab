@@ -1,0 +1,9 @@
+model_family: "sdxl"
+base_model_path: "stabilityai/stable-diffusion-xl-base-1.0"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
+min_snr_gamma: 5.0

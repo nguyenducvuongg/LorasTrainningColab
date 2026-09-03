@@ -1,0 +1,31 @@
+# Core Requirements for OmniLoRA Studio
+pydantic>=2.5.0
+pyyaml>=6.0
+rich>=13.7.0
+click>=8.1.0
+tqdm>=4.66.0
+pillow>=10.0.0
+requests>=2.31.0
+psutil>=5.9.0
+numpy>=1.24.0
+
+# PyTorch Ecosystem (installed via colab_bootstrap.sh)
+torch>=2.1.0
+torchvision>=0.16.0
+accelerate>=0.28.0
+diffusers>=0.28.0
+transformers>=4.40.0
+safetensors>=0.4.2
+peft>=0.10.0
+bitsandbytes>=0.43.0
+prodigyopt>=1.0.0
+sentencepiece>=0.2.0
+
+# 100% Likeness & Vision Metric Engine
+insightface>=0.7.3
+onnxruntime>=1.17.0
+opencv-python-headless>=4.9.0
+
+# Testing & Quality
+pytest>=8.0.0
+pytest-cov>=4.1.0

@@ -1,0 +1,27 @@
+objective: "character_fullbody"
+description: "Nhân vật toàn diện bao gồm: khuôn mặt, hình thể, trang phục đặc trưng và phụ kiện"
+
+dataset:
+  repeats: 10
+  resolution: 1024
+  enable_bucketing: true
+  auto_caption: true
+  caption_backend: "florence2"
+  subject_decoupling: true
+  face_crop_multiscale: true
+
+training:
+  network_dim: 32
+  network_alpha: 16
+  use_dora: true
+  optimizer_type: "Prodigy"
+  learning_rate: 1.0
+  epochs: 15
+  batch_size: 1
+  gradient_accumulation_steps: 2
+  save_every_n_epochs: 2
+
+validation:
+  enabled: true
+  compute_likeness_score: true
+  select_best_checkpoint: true

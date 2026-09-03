@@ -1,0 +1,10 @@
+model_family: "pony-v6"
+base_model_path: "AstraliteHeart/pony-diffusion-v6-xl"
+network_dim: 64
+network_alpha: 32
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
+caption_backend: "wd14"
+min_snr_gamma: 5.0

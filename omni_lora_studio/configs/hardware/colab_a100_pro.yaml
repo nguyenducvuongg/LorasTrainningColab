@@ -1,0 +1,11 @@
+# Tối ưu hóa cho Google Colab Pro+ / Cloud A100 (40GB / 80GB VRAM)
+hardware_tier: "A100_PRO"
+mixed_precision: "bf16"
+enable_fp8: false
+enable_cpu_offload: false
+cache_latents_to_disk: true
+gradient_checkpointing: true
+recommended_batch_size: 4
+gradient_accumulation_steps: 1
+enable_flash_attention: true
+optimizer: "Prodigy"

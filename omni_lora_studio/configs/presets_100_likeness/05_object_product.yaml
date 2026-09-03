@@ -1,0 +1,25 @@
+objective: "object_product"
+description: "Huấn luyện sản phẩm, logo, đồ vật và phương tiện chuẩn xác 100% theo bản vẽ hoặc ảnh mẫu"
+
+dataset:
+  repeats: 12
+  resolution: 1024
+  enable_bucketing: true
+  auto_caption: true
+  caption_backend: "florence2"
+  subject_decoupling: true
+  face_crop_multiscale: false
+
+training:
+  network_dim: 32
+  network_alpha: 16
+  use_dora: true
+  optimizer_type: "Prodigy"
+  learning_rate: 1.0
+  epochs: 12
+  batch_size: 1
+  gradient_accumulation_steps: 2
+
+validation:
+  enabled: true
+  compute_likeness_score: false

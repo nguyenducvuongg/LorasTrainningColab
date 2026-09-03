@@ -1,0 +1,8 @@
+model_family: "sd1.5"
+base_model_path: "runwayml/stable-diffusion-v1-5"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 512

@@ -1,0 +1,9 @@
+model_family: "illustrious"
+base_model_path: "OnomaAIResearch/Illustrious-xl-early-release-v0"
+network_dim: 64
+network_alpha: 32
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
+caption_backend: "wd14"

@@ -1,0 +1,9 @@
+model_family: "z-image"
+base_model_path: "Kwai-Kolors/Kolors"
+engine: "musubi"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024

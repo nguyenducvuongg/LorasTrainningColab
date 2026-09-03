@@ -1,0 +1,24 @@
+objective: "photoreal_skin"
+description: "Huấn luyện tái hiện độ chi tiết da người thật, lỗ chân lông vi mô và dải tương phản ánh sáng studio"
+
+dataset:
+  repeats: 8
+  resolution: 1024
+  enable_bucketing: true
+  auto_caption: true
+  caption_backend: "joycaption"
+  subject_decoupling: false
+
+training:
+  network_dim: 64
+  network_alpha: 32
+  use_dora: true
+  optimizer_type: "Prodigy"
+  learning_rate: 1.0
+  epochs: 10
+  batch_size: 1
+  gradient_accumulation_steps: 2
+
+validation:
+  enabled: true
+  compute_likeness_score: false

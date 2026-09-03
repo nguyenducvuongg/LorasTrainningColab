@@ -1,0 +1,11 @@
+# Tối ưu hóa cho Google Colab Pro (GPU L4 24GB VRAM)
+hardware_tier: "L4_PRO"
+mixed_precision: "bf16"
+enable_fp8: true
+enable_cpu_offload: false
+cache_latents_to_disk: true
+gradient_checkpointing: true
+recommended_batch_size: 2
+gradient_accumulation_steps: 1
+enable_flash_attention: true
+optimizer: "Prodigy"

@@ -1,0 +1,9 @@
+model_family: "krea2"
+base_model_path: "krea/krea2-raw"
+engine: "aitoolkit"
+network_dim: 32
+network_alpha: 16
+use_dora: true
+learning_rate: 1.0
+optimizer_type: "Prodigy"
+resolution: 1024
