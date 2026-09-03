@@ -14,6 +14,9 @@ fi
 echo "📦 Cài đặt thư viện phụ trợ..."
 pip install --quiet --upgrade pip
 pip install --quiet \
+    "transformers>=4.40.0,<=4.48.3" \
+    accelerate>=0.28.0 \
+    timm>=0.9.16 \
     pydantic>=2.5.0 \
     pyyaml>=6.0 \
     rich>=13.7.0 \
