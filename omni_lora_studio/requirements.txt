@@ -9,17 +9,27 @@ requests>=2.31.0
 psutil>=5.9.0
 numpy>=1.24.0
 
-# PyTorch Ecosystem (installed via colab_bootstrap.sh)
+# PyTorch Ecosystem
 torch>=2.1.0
 torchvision>=0.16.0
 accelerate>=0.28.0
 diffusers>=0.28.0
-transformers>=4.40.0
+transformers>=4.40.0,<=4.48.3
 safetensors>=0.4.2
 peft>=0.10.0
 bitsandbytes>=0.43.0
 prodigyopt>=1.0.0
 sentencepiece>=0.2.0
+
+# Kohya sd-scripts Essential Dependencies
+voluptuous>=0.13.1
+toml>=0.10.2
+einops>=0.7.0
+albumentations>=1.4.0
+open-clip-torch>=2.24.0
+lycoris-lora>=2.2.0
+dadaptation>=3.1
+protobuf>=3.20.0
 
 # 100% Likeness & Vision Metric Engine
 insightface>=0.7.3

@@ -4,6 +4,13 @@ from .base import BaseTrainer
 from ..core.config import OmniConfig
 from ..core.hardware import HardwareProfiler
 
+MODEL_MAPPING = {
+    "flux.1-dev": "black-forest-labs/FLUX.1-dev",
+    "flux-dev": "black-forest-labs/FLUX.1-dev",
+    "flux.1-schnell": "black-forest-labs/FLUX.1-schnell",
+    "flux-schnell": "black-forest-labs/FLUX.1-schnell",
+}
+
 class KohyaFluxTrainer(BaseTrainer):
     """Huấn luyện FLUX.1 (dev/schnell) bằng Kohya flux_train_network.py kết hợp Flow-Matching & FP8."""
 
@@ -12,11 +19,15 @@ class KohyaFluxTrainer(BaseTrainer):
         d = self.config.dataset
         profile = HardwareProfiler.analyze("flux-dev")
 
+        # Chuẩn hóa đường dẫn mô hình nền
+        raw_path = str(t.base_model_path).strip()
+        model_path = MODEL_MAPPING.get(raw_path.lower(), raw_path)
+
         cmd = [
             "accelerate", "launch",
             "--num_cpu_threads_per_process", "4",
             "sd-scripts/flux_train_network.py",
-            f"--pretrained_model_name_or_path={t.base_model_path}",
+            f"--pretrained_model_name_or_path={model_path}",
             f"--train_data_dir={d.dataset_path}",
             f"--output_dir={t.output_dir}",
             f"--output_name={t.output_name}",
@@ -42,7 +53,7 @@ class KohyaFluxTrainer(BaseTrainer):
             cmd.append("--cache_latents_to_disk")
 
         if profile.enable_fp8:
-            cmd.extend(["--fp8_base", "--highvram"])
+            cmd.append("--fp8_base")
 
         if profile.enable_cpu_offload:
             cmd.append("--cpu_offload_checkpointing")
