@@ -101,10 +101,8 @@ class KohyaFluxTrainer(BaseTrainer):
             "--enable_bucket",
             f"--max_bucket_reso={d.resolution}",
             "--save_model_as=safetensors",
+            "--sdpa"  # Chuẩn PyTorch Scaled Dot-Product Attention
         ]
-
-        if t.use_dora:
-            cmd.append("--dora_wd")
 
         if t.cache_latents_to_disk:
             cmd.append("--cache_latents_to_disk")
@@ -114,11 +112,6 @@ class KohyaFluxTrainer(BaseTrainer):
 
         if profile.enable_cpu_offload:
             cmd.append("--cpu_offload_checkpointing")
-
-        if profile.enable_flash_attention:
-            cmd.append("--flash_attn")
-        else:
-            cmd.append("--sdpa")
 
         if t.optimizer_type.lower() == "prodigy":
             cmd.extend(["--optimizer_type=Prodigy", "--optimizer_args", "d_coef=1.0", "weight_decay=0.01"])
