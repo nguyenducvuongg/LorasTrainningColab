@@ -33,7 +33,7 @@ SYSTEM_PROMPTS = {
 class GeminiVisionCaptioner(BaseCaptioner):
     """Generates ultra-high-quality image captions using Google Gemini Vision API."""
 
-    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.5-flash", task_type: str = "character"):
+    def __init__(self, api_key: Optional[str] = None, model_name: str = "gemini-2.0-flash", task_type: str = "character"):
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is required for GeminiVisionCaptioner.")
@@ -64,10 +64,17 @@ class GeminiVisionCaptioner(BaseCaptioner):
                     "Write a 1-3 sentence dense descriptive caption for this image suitable for image generation training."
                 )
                 
-                response = self.client.models.generate_content(
-                    model=self.model_name,
-                    contents=[img, prompt]
-                )
+                try:
+                    response = self.client.models.generate_content(
+                        model=self.model_name,
+                        contents=[img, prompt]
+                    )
+                except Exception as gen_err:
+                    logger.warning(f"Primary model {self.model_name} failed ({gen_err}), falling back to gemini-1.5-flash...")
+                    response = self.client.models.generate_content(
+                        model="gemini-1.5-flash",
+                        contents=[img, prompt]
+                    )
                 
                 raw_caption = response.text.strip()
                 cleaned = CaptionCleaner.clean_text(

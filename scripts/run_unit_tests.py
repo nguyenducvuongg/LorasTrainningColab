@@ -86,5 +86,34 @@ class TestColabLoRAStudio(unittest.TestCase):
         self.assertEqual(EngineFactory.resolve_engine_type("wan2.1"), MusubiTrainer)
         self.assertEqual(EngineFactory.resolve_engine_type("qwen-image"), MusubiTrainer)
 
+    def test_dashboard_log_parsing(self):
+        from lora_colab.monitoring.dashboard import LiveTrainingDashboard
+        dash = LiveTrainingDashboard(total_steps=1650)
+        
+        # Test exact user log line from Colab:
+        user_log_line = "mai_lora: 49%|█████████ | 810/1650 [28:41<27:46, 1.98s/it, lr: 2.6e-04 loss: 2.810e-02]"
+        dash.parse_log_line(user_log_line)
+        
+        self.assertEqual(dash.current_step, 810)
+        self.assertEqual(dash.total_steps, 1650)
+        self.assertAlmostEqual(dash.current_loss, 0.0281, places=4)
+        self.assertAlmostEqual(dash.current_lr, 0.00026, places=6)
+        self.assertEqual(dash.speed_str, "1.98s/it")
+        self.assertEqual(dash.eta_str, "27:46")
+
+    def test_resume_manager_recursive_discovery(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Simulate nested directory structure from AI-Toolkit: checkpoints/my_lora/my_lora_00000800.safetensors
+            sub_dir = os.path.join(tmp_dir, "my_lora")
+            os.makedirs(sub_dir, exist_ok=True)
+            ckpt_path = os.path.join(sub_dir, "my_lora_00000800.safetensors")
+            with open(ckpt_path, "wb") as f:
+                f.write(b"checkpoint_data")
+
+            res = ResumeManager.find_latest_checkpoint(tmp_dir)
+            self.assertIsNotNone(res)
+            self.assertEqual(res[0], ckpt_path)
+            self.assertEqual(res[1], 800)
+
 if __name__ == "__main__":
     unittest.main()

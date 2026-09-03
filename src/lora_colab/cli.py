@@ -12,9 +12,7 @@ from .dataset.captioning.gemini_api import GeminiVisionCaptioner
 from .dataset.captioning.deepseek_api import DeepSeekVisionCaptioner
 from .dataset.captioning.wd14 import WD14Tagger
 from .dataset.captioning.joycaption import JoyCaptioner
-from .engines.aitoolkit_trainer import AIToolkitTrainer
-from .engines.kohya_trainer import KohyaTrainer
-from .engines.diffusers_trainer import DiffusersTrainer
+from .engines.factory import EngineFactory
 
 logger = setup_logger("lora_colab.cli")
 
@@ -93,14 +91,7 @@ def main():
             if resume_info["can_resume"]:
                 resume_from = resume_info["checkpoint_path"]
 
-        fam = config.training.model_family.lower()
-        if "flux" in fam or "krea" in fam:
-            trainer = AIToolkitTrainer(config)
-        elif any(k in fam for k in ["sdxl", "pony", "sd15", "sd35"]):
-            trainer = KohyaTrainer(config)
-        else:
-            trainer = DiffusersTrainer(config)
-
+        trainer = EngineFactory.create_trainer(config)
         trainer.train(resume_from=resume_from)
 
 if __name__ == "__main__":

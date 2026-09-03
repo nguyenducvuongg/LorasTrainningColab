@@ -20,22 +20,26 @@ class ResumeManager:
         candidates: List[Tuple[str, int]] = []
         pattern = re.compile(r"[-_](?:step|epoch|state)?[-_]?(\d+)", re.IGNORECASE)
 
-        for item in os.listdir(checkpoint_dir):
-            full_path = os.path.join(checkpoint_dir, item)
-            match = pattern.search(item)
-            if match:
-                try:
-                    step_num = int(match.group(1))
-                    candidates.append((full_path, step_num))
-                except ValueError:
+        for root, _, files in os.walk(checkpoint_dir):
+            for item in files:
+                if not item.endswith((".safetensors", ".pt", ".bin")):
                     continue
+                full_path = os.path.join(root, item)
+                match = pattern.search(item)
+                if match:
+                    try:
+                        step_num = int(match.group(1))
+                        candidates.append((full_path, step_num))
+                    except ValueError:
+                        continue
 
         if not candidates:
             # Fallback: check modification time
-            all_files = [
-                os.path.join(checkpoint_dir, f) for f in os.listdir(checkpoint_dir)
-                if f.endswith((".safetensors", ".pt", ".bin")) or os.path.isdir(os.path.join(checkpoint_dir, f))
-            ]
+            all_files = []
+            for root, _, files in os.walk(checkpoint_dir):
+                for f in files:
+                    if f.endswith((".safetensors", ".pt", ".bin")):
+                        all_files.append(os.path.join(root, f))
             if all_files:
                 latest = max(all_files, key=os.path.getmtime)
                 return (latest, 0)

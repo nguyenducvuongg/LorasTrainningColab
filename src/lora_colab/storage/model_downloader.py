@@ -79,9 +79,9 @@ MODEL_REGISTRY: Dict[str, Dict[str, Any]] = {
         "name": "Pony Diffusion V6 XL",
         "category": "models/sdxl",
         "filename": "ponyDiffusionV6XL.safetensors",
-        "repo_id": "cagliostrolab/animagine-xl-3.1",
-        "hf_filename": "animagine-xl-3.1.safetensors",
-        "direct_url": "https://huggingface.co/Linaqruf/animagine-xl-3.0/resolve/main/animagine-xl-3.0.safetensors",
+        "repo_id": "AstraliteHeart/pony-diffusion-v6",
+        "hf_filename": "v6.safetensors",
+        "direct_url": "https://huggingface.co/AstraliteHeart/pony-diffusion-v6/resolve/main/v6.safetensors",
         "min_size_gb": 6.0,
         "is_gated": False,
         "auxiliary_files": ["sdxl-vae"]

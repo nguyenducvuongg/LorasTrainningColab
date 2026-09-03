@@ -29,18 +29,30 @@ class SamplePreviewGenerator:
             from diffusers import AutoPipelineForText2Image
 
             console.print(f"[bold cyan]🎨 Generating preview for prompt:[/bold cyan] '{prompt}'...")
-            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-            
-            pipe = AutoPipelineForText2Image.from_pretrained(
-                base_model_path,
-                torch_dtype=dtype,
-                trust_remote_code=True
-            ).to("cuda")
+            device = "cuda" if torch is not None and torch.cuda.is_available() else "cpu"
+            if device == "cuda":
+                dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            else:
+                dtype = torch.float32
+
+            is_single_file = base_model_path.endswith((".safetensors", ".ckpt"))
+            if is_single_file:
+                pipe = AutoPipelineForText2Image.from_single_file(
+                    base_model_path,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                ).to(device)
+            else:
+                pipe = AutoPipelineForText2Image.from_pretrained(
+                    base_model_path,
+                    torch_dtype=dtype,
+                    trust_remote_code=True
+                ).to(device)
 
             if lora_weights_path and os.path.exists(lora_weights_path):
                 pipe.load_lora_weights(lora_weights_path)
 
-            generator = torch.Generator("cuda").manual_seed(seed)
+            generator = torch.Generator(device).manual_seed(seed)
             image = pipe(
                 prompt=prompt,
                 negative_prompt=negative_prompt,

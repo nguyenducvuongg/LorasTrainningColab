@@ -23,13 +23,13 @@ mkdir -p /content/backends
 if [ ! -d "/content/backends/sd-scripts" ]; then
     echo "📥 Cloning Kohya sd-scripts..."
     git clone --depth 1 https://github.com/kohya-ss/sd-scripts.git /content/backends/sd-scripts
-    pip install -r /content/backends/sd-scripts/requirements.txt || true
+    pip install --prefer-binary -r /content/backends/sd-scripts/requirements.txt || true
 fi
 
 if [ ! -d "/content/backends/ai-toolkit" ]; then
     echo "📥 Cloning AI-Toolkit for Flux.1..."
-    git clone --depth 1 https://github.com/ostris/ai-toolkit.git /content/backends/ai-toolkit
-    pip install -r /content/backends/ai-toolkit/requirements.txt || true
+    git clone --depth 1 --recurse-submodules https://github.com/ostris/ai-toolkit.git /content/backends/ai-toolkit
+    pip install --prefer-binary -r /content/backends/ai-toolkit/requirements.txt || true
 fi
 
 # 5. Install local package in editable mode

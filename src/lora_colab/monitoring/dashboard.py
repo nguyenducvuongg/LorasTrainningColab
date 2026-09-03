@@ -71,16 +71,22 @@ class LiveTrainingDashboard:
                 self.display_handle = None
 
     def get_hardware_metrics(self) -> Dict[str, str]:
-        """Đo lường mức sử dụng VRAM GPU và RAM hệ thống tức thời."""
+        """Đo lường mức sử dụng VRAM GPU và RAM hệ thống tức thời (toàn hệ thống GPU)."""
         vram_str = "N/A"
         ram_str = "N/A"
 
         try:
             import torch
             if torch.cuda.is_available():
-                allocated = torch.cuda.memory_allocated(0) / (1024 ** 3)
-                total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-                vram_str = f"{allocated:.1f} / {total:.1f} GB"
+                if hasattr(torch.cuda, "mem_get_info"):
+                    free_b, total_b = torch.cuda.mem_get_info(0)
+                    used_gb = (total_b - free_b) / (1024 ** 3)
+                    total_gb = total_b / (1024 ** 3)
+                    vram_str = f"{used_gb:.1f} / {total_gb:.1f} GB"
+                else:
+                    allocated = torch.cuda.memory_allocated(0) / (1024 ** 3)
+                    total = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+                    vram_str = f"{allocated:.1f} / {total:.1f} GB"
         except Exception:
             pass
 
@@ -133,24 +139,41 @@ class LiveTrainingDashboard:
         if len(self.recent_logs) > self.max_log_lines:
             self.recent_logs.pop(0)
 
-        # 1. Trích xuất Step / Epoch — hỗ trợ cả Kohya và AI-Toolkit formats
-        # AI-Toolkit format: "step: 100/1000" hoặc "step=100"
-        # Kohya format: "steps: 100/1000" hoặc "global_step=100"
-        step_match = re.search(r"(?:step[s]?)\s*[:=]\s*(\d+)\s*/\s*(\d+)", clean_line, re.IGNORECASE)
-        if step_match:
+        # 1. Trích xuất Step / Epoch — hỗ trợ cả Kohya, AI-Toolkit và standard tqdm formats
+        # Format tqdm: "mai_lora: 49%|████ | 810/1650 [28:41<27:46, 1.98s/it, lr: 2.6e-04 loss: 2.810e-02]"
+        tqdm_step_match = re.search(r"\|\s*(\d+)\s*/\s*(\d+)\s*\[", clean_line)
+        if tqdm_step_match:
             try:
-                self.current_step = int(step_match.group(1))
-                self.total_steps = max(self.total_steps, int(step_match.group(2)))
+                self.current_step = int(tqdm_step_match.group(1))
+                self.total_steps = max(self.total_steps, int(tqdm_step_match.group(2)))
             except Exception:
                 pass
         else:
-            # AI-Toolkit: "step=100" hoặc "global_step=100" không có tổng
-            gs_match = re.search(r"(?:global_step|step)\s*=\s*(\d+)", clean_line, re.IGNORECASE)
-            if gs_match:
+            step_match = re.search(r"(?:step[s]?)\s*[:=]\s*(\d+)\s*/\s*(\d+)", clean_line, re.IGNORECASE)
+            if step_match:
                 try:
-                    self.current_step = int(gs_match.group(1))
+                    self.current_step = int(step_match.group(1))
+                    self.total_steps = max(self.total_steps, int(step_match.group(2)))
                 except Exception:
                     pass
+            else:
+                gs_match = re.search(r"(?:global_step|step)\s*=\s*(\d+)", clean_line, re.IGNORECASE)
+                if gs_match:
+                    try:
+                        self.current_step = int(gs_match.group(1))
+                    except Exception:
+                        pass
+                else:
+                    gen_match = re.search(r"(?<=\s)(\d+)\s*/\s*(\d+)(?=\s|\[|$)", clean_line)
+                    if gen_match:
+                        try:
+                            s_val = int(gen_match.group(1))
+                            t_val = int(gen_match.group(2))
+                            if t_val >= 10:
+                                self.current_step = s_val
+                                self.total_steps = max(self.total_steps, t_val)
+                        except Exception:
+                            pass
 
         # Epoch detection
         epoch_match = re.search(r"epoch\s*[:=]?\s*(\d+)\s*/\s*(\d+)", clean_line, re.IGNORECASE)
@@ -161,8 +184,8 @@ class LiveTrainingDashboard:
             except Exception:
                 pass
 
-        # 2. Trích xuất Loss — AI-Toolkit: "loss: 0.1234" hoặc "train_loss=0.1234"
-        loss_match = re.search(r"(?:train_loss|loss)\s*[:=]\s*([0-9]+\.[0-9]+)", clean_line, re.IGNORECASE)
+        # 2. Trích xuất Loss — hỗ trợ cả float thông thường và ký hiệu khoa học (vd: "loss: 2.810e-02")
+        loss_match = re.search(r"(?:train_loss|loss)\s*[:=]\s*([0-9.]+(?:[eE][+-]?\d+)?)", clean_line, re.IGNORECASE)
         if loss_match:
             try:
                 self.current_loss = float(loss_match.group(1))
